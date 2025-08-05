@@ -238,3 +238,123 @@ if __name__ == "__main__":
 - **性能优化**：如果图像很大，计算变换后的边界可能会稍慢，但通常影响不大。
 
 这样处理后，矫正后的图像将包含所有原始内容，而不仅仅是矩形区域！ 🚀
+
+---
+如果你希望在应用透视变换后，**保持图像的原始尺寸**（即输出图像大小与输入相同），同时确保变换后的内容不被裁剪，可以按以下方式调整：
+
+
+### **方法思路**
+1. **计算变换后的图像边界**  
+   - 将原始图像的四个角点 `(0,0)`, `(w,0)`, `(w,h)`, `(0,h)` 应用透视变换 `M`，得到变换后的新边界。
+   - 计算这些变换后的点的最小/最大坐标，确定是否需要缩放或平移。
+
+2. **调整变换矩阵 `M`**  
+   - 如果变换后的内容超出原始图像尺寸，可以：
+     - **缩放**：调整 `M` 使变换后的内容适应原始尺寸。
+     - **平移**：移动变换后的内容到图像中心。
+
+3. **使用 `cv2.warpPerspective` 并指定 `dsize=(原始宽度, 原始高度)`**  
+   - 直接强制输出图像与输入同尺寸，但可能部分内容被裁剪（需权衡）。
+
+---
+
+### **代码实现**
+```python
+import cv2
+import numpy as np
+
+def order_points(pts):
+    """按固定顺序排序四个点：左上、右上、右下、左下"""
+    rect = np.zeros((4, 2), dtype="float32")
+    s = pts.sum(axis=1)
+    rect[0] = pts[np.argmin(s)]  # 左上：总和最小
+    rect[2] = pts[np.argmax(s)]  # 右下：总和最大
+    
+    diff = np.diff(pts, axis=1)
+    rect[1] = pts[np.argmin(diff)]  # 右上：x-y最小
+    rect[3] = pts[np.argmax(diff)]  # 左下：x-y最大
+    return rect
+
+def transform_perspective_keep_size(image, pts):
+    """透视变换并保持原始图像尺寸"""
+    h, w = image.shape[:2]
+    rect = order_points(pts)
+    (tl, tr, br, bl) = rect
+    
+    # 计算目标矩形的宽度和高度（保持原始比例）
+    width_top = np.linalg.norm(tr - tl)
+    width_bottom = np.linalg.norm(br - bl)
+    max_width = max(int(width_top), int(width_bottom))
+    
+    height_left = np.linalg.norm(bl - tl)
+    height_right = np.linalg.norm(br - tr)
+    max_height = max(int(height_left), int(height_right))
+    
+    # 定义目标点（缩放到原始图像尺寸的比例）
+    scale_x = w / max_width
+    scale_y = h / max_height
+    scale = min(scale_x, scale_y)  # 选择较小的缩放比例以保持内容完整
+    
+    dst = np.array([
+        [0, 0],
+        [max_width - 1, 0],
+        [max_width - 1, max_height - 1],
+        [0, max_height - 1]
+    ], dtype="float32") * scale  # 缩放目标点
+    
+    # 平移目标点到图像中心
+    dst[:, 0] += (w - dst[:, 0].max()) / 2
+    dst[:, 1] += (h - dst[:, 1].max()) / 2
+    
+    # 计算透视变换矩阵
+    M = cv2.getPerspectiveTransform(rect, dst)
+    
+    # 应用变换（输出尺寸与输入相同）
+    warped = cv2.warpPerspective(
+        image, M, (w, h),
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=(0, 0, 0)  # 填充黑色
+    )
+    return warped
+
+# 示例使用
+if __name__ == "__main__":
+    image = cv2.imread("input.jpg")
+    input_points = np.array([[50, 50], [200, 100], [220, 300], [30, 250]], dtype="float32")
+    
+    # 执行变换（保持原始尺寸）
+    result = transform_perspective_keep_size(image, input_points)
+    
+    cv2.imwrite("output_keep_size.jpg", result)
+```
+
+---
+
+### **关键说明**
+1. **目标点缩放 (`scale`)**  
+   - 根据原始图像尺寸 (`w, h`) 和变换后的矩形尺寸 (`max_width, max_height`) 计算缩放比例。
+   - 选择较小的比例 (`min(scale_x, scale_y)`) 确保内容完整。
+
+2. **平移目标点到中心**  
+   - 调整 `dst` 的坐标，使变换后的内容位于图像中心。
+
+3. **输出尺寸强制匹配输入**  
+   - `cv2.warpPerspective` 的 `dsize=(w, h)` 确保输出与输入同尺寸。
+
+4. **填充处理 (`borderMode`)**  
+   - 超出原始图像的部分填充黑色（可通过 `borderValue` 修改）。
+
+---
+
+### **效果**
+- **输入**：任意四边形（如倾斜的矩形）。
+- **输出**：矫正后的矩形，尺寸与输入相同，内容居中显示，边缘填充黑色。
+
+---
+
+### **注意事项**
+- **内容完整性**：如果变换后的内容远大于原始尺寸，缩放可能导致内容过小。
+- **优化选择**：若需保留更多细节，可放弃固定尺寸，改用动态尺寸（参考前文方法）。
+
+这样即可在保持原始尺寸的同时完成透视矫正！ 🎯

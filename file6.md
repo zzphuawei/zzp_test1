@@ -717,3 +717,104 @@ angle_tolerance=20        # 角度容差范围
    ```
 
 这个整合版本结合了基础形状识别和高级几何验证，能够在各种场景下更可靠地检测长矩形区域。
+
+---
+
+要识别图像中由上下两层偏黑边和中间小灯珠组成的多个矩形区域，可以使用以下Python代码（基于OpenCV）。该方法不依赖颜色配置，通过边缘检测和轮廓分析实现：
+
+```python
+import cv2
+import numpy as np
+
+def detect_rectangular_regions(image_path):
+    # 读取图像并转换为灰度图
+    img = cv2.imread(image_path)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    # 使用自适应阈值二值化（增强对光照变化的鲁棒性）
+    binary = cv2.adaptiveThreshold(
+        gray, 255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV, 11, 2
+    )
+    
+    # 形态学操作：闭操作连接水平边缘
+    kernel_horizontal = cv2.getStructuringElement(cv2.MORPH_RECT, (50, 1))
+    closed = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel_horizontal)
+    
+    # 查找轮廓
+    contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    detected_regions = []
+    
+    for contour in contours:
+        # 计算轮廓的边界矩形
+        x, y, w, h = cv2.boundingRect(contour)
+        
+        # 筛选有效矩形区域（根据实际调整参数）
+        if w > 100 and h > 50:  # 过滤太小的区域
+            # 扩展矩形区域（确保包含整个目标区域）
+            expand_y = int(h * 0.2)  # 向上/下扩展20%高度
+            expanded_y = max(0, y - expand_y)
+            expanded_h = min(img.shape[0], h + 2 * expand_y)
+            
+            detected_regions.append((
+                x, expanded_y, w, expanded_h
+            ))
+    
+    # 绘制检测结果
+    output_img = img.copy()
+    for (x, y, w, h) in detected_regions:
+        cv2.rectangle(output_img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+    
+    return output_img, detected_regions
+
+# 使用示例
+result_image, regions = detect_rectangular_regions("your_image.jpg")
+
+# 保存结果
+cv2.imwrite("result.jpg", result_image)
+
+# 打印检测到的区域坐标
+for i, (x, y, w, h) in enumerate(regions):
+    print(f"Region {i+1}: X={x}, Y={y}, Width={w}, Height={h}")
+```
+
+### 方法说明：
+1. **自适应二值化**  
+   - 使用`ADAPTIVE_THRESH_GAUSSIAN_C`适应不同光照条件
+   - `THRESH_BINARY_INV`反转结果使黑边变为白色前景
+
+2. **形态学处理**  
+   - 水平闭操作（50×1矩形核）连接断开的黑边
+   - 强化上下两条水平边缘的连续性
+
+3. **轮廓检测与筛选**  
+   - 只保留外部轮廓(`RETR_EXTERNAL`)
+   - 通过最小宽高过滤噪声
+   - 垂直扩展矩形区域确保包含整个目标
+
+4. **参数调整建议**：
+   - `adaptiveThreshold`中的`blockSize`(11)和`C`(2)：根据噪声情况调整
+   - 闭操作核大小(50,1)：根据黑边最小长度调整
+   - 区域扩展比例(0.2)：根据灯珠区域高度调整
+
+### 处理效果：
+- ✅ 识别包含黑边和灯珠的完整矩形
+- ✅ 自动适应不同光照条件
+- ✅ 支持同时检测多个区域
+- ✅ 返回每个区域的坐标信息
+
+### 注意事项：
+1. 如果图像中有其他水平线条，可通过：
+   - 增大闭操作核的宽度
+   - 添加面积筛选条件
+   - 使用轮廓近似（`cv2.approxPolyDP`）排除非矩形区域
+
+2. 对于倾斜区域，可添加旋转矩形检测：
+   ```python
+   rect = cv2.minAreaRect(contour)
+   box = cv2.boxPoints(rect)
+   ```
+
+此方案适用于大多数包含明显水平黑边的灯珠区域检测，实际使用中可能需要根据具体图像微调形态学操作和过滤参数。

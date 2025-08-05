@@ -475,3 +475,245 @@ if len(approx) == 4:
 - 电子元件和PCB板上的长条形结构
 
 通过调整参数，可以适应不同大小、方向和长宽比的矩形检测需求。
+
+---
+# 整合高级优化技巧的形状识别代码
+
+下面是整合了高级优化技巧（边缘检测、轮廓近似和平行线检测）的完整代码：
+
+```python
+import cv2
+import numpy as np
+
+def detect_long_rectangles(image_path, min_length=100, min_aspect_ratio=5, min_area=1000, 
+                          require_rect_angle=False, angle_tolerance=15):
+    """
+    识别图像中的长矩形区域（整合高级优化）
+    
+    参数:
+        image_path: 图像路径
+        min_length: 最小长度(像素)
+        min_aspect_ratio: 最小长宽比
+        min_area: 最小面积
+        require_rect_angle: 是否要求角度接近90度
+        angle_tolerance: 角度容差（度）
+    """
+    # 读取图像
+    image = cv2.imread(image_path)
+    if image is None:
+        print(f"错误: 无法读取图像 {image_path}")
+        return None, []
+    
+    original = image.copy()
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    
+    # 1. 预处理 - 减少噪声并增强边缘
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    
+    # 使用Canny边缘检测替代阈值（高级优化）
+    edges = cv2.Canny(blurred, 50, 150)
+    
+    # 2. 形态学操作 - 连接边缘并填充小孔
+    kernel = np.ones((3, 3), np.uint8)
+    processed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=2)
+    processed = cv2.dilate(processed, kernel, iterations=1)
+    
+    # 3. 查找轮廓
+    contours, _ = cv2.findContours(processed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    # 4. 筛选长矩形轮廓
+    detected_rectangles = []
+    
+    for contour in contours:
+        # 计算轮廓面积
+        area = cv2.contourArea(contour)
+        if area < min_area:
+            continue
+        
+        # 轮廓近似 - 减少点数，提高处理效率（高级优化）
+        peri = cv2.arcLength(contour, True)
+        approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
+        
+        # 获取最小外接矩形
+        rect = cv2.minAreaRect(contour)
+        box = cv2.boxPoints(rect)
+        box = np.int0(box)
+        
+        # 计算边长
+        width, height = rect[1]
+        long_side = max(width, height)
+        short_side = min(width, height)
+        
+        # 跳过太小的矩形
+        if long_side < min_length:
+            continue
+            
+        # 计算长宽比
+        aspect_ratio = long_side / max(short_side, 1)
+        
+        # 平行线检测（验证是否为矩形）- 高级优化
+        is_rectangle = True
+        if require_rect_angle and len(approx) == 4:
+            # 计算对边平行度
+            vectors = []
+            for i in range(4):
+                pt1 = approx[i][0]
+                pt2 = approx[(i+1) % 4][0]
+                vectors.append(pt2 - pt1)
+            
+            # 计算相邻边夹角
+            angles = []
+            for i in range(4):
+                v1 = vectors[i]
+                v2 = vectors[(i+1) % 4]
+                
+                # 计算夹角（度）
+                cos_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-5)
+                angle = np.arccos(np.clip(cos_angle, -1, 1)) * 180 / np.pi
+                angles.append(angle)
+            
+            # 检查角度是否接近90度（允许容差）
+            for angle in angles:
+                if not (90 - angle_tolerance < angle < 90 + angle_tolerance):
+                    is_rectangle = False
+                    break
+        else:
+            # 如果不要求角度检测，则默认是矩形
+            is_rectangle = True
+        
+        # 筛选条件：足够长、长宽比大且是矩形
+        if aspect_ratio > min_aspect_ratio and is_rectangle:
+            detected_rectangles.append(box)
+            
+            # 绘制边界框
+            cv2.drawContours(original, [box], 0, (0, 255, 0), 2)
+            
+            # 标记方向
+            center = tuple(np.int0(rect[0]))
+            angle = rect[2]
+            if angle < -45:
+                angle += 90
+            cv2.putText(original, f"{angle:.1f}°", center, 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+    
+    # 5. 显示结果
+    cv2.imshow('Processed Image', processed)
+    cv2.imshow('Detected Rectangles', original)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    
+    # 返回结果图像和检测到的矩形
+    return original, detected_rectangles
+
+if __name__ == "__main__":
+    # 使用示例
+    result_image, rectangles = detect_long_rectangles(
+        "input.jpg", 
+        min_length=100,     # 最小长度
+        min_aspect_ratio=5, # 最小长宽比
+        min_area=500,       # 最小面积
+        require_rect_angle=True,  # 开启角度验证
+        angle_tolerance=20  # 角度容差
+    )
+    
+    # 保存结果
+    if result_image is not None:
+        cv2.imwrite("detected_rectangles.jpg", result_image)
+        print(f"检测到 {len(rectangles)} 个长矩形区域")
+```
+
+## 整合的关键优化点
+
+### 1. Canny边缘检测替代阈值处理
+```python
+# 使用Canny边缘检测替代阈值
+edges = cv2.Canny(blurred, 50, 150)
+```
+
+### 2. 轮廓近似优化
+```python
+# 轮廓近似 - 减少点数，提高处理效率
+peri = cv2.arcLength(contour, True)
+approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
+```
+
+### 3. 平行线检测（角度验证）
+```python
+# 计算对边平行度
+vectors = []
+for i in range(4):
+    pt1 = approx[i][0]
+    pt2 = approx[(i+1) % 4][0]
+    vectors.append(pt2 - pt1)
+
+# 计算相邻边夹角
+angles = []
+for i in range(4):
+    v1 = vectors[i]
+    v2 = vectors[(i+1) % 4]
+    
+    # 计算夹角（度）
+    cos_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-5)
+    angle = np.arccos(np.clip(cos_angle, -1, 1)) * 180 / np.pi
+    angles.append(angle)
+
+# 检查角度是否接近90度（允许容差）
+for angle in angles:
+    if not (90 - angle_tolerance < angle < 90 + angle_tolerance):
+        is_rectangle = False
+        break
+```
+
+### 4. 新增控制参数
+```python
+require_rect_angle=True,  # 是否开启角度验证
+angle_tolerance=20        # 角度容差范围
+```
+
+## 使用建议
+
+1. **图像质量较高时**：
+   - 开启角度验证 (`require_rect_angle=True`)
+   - 使用较小角度容差 (`angle_tolerance=10-15`)
+   - 可以获得更精确的矩形检测结果
+
+2. **图像质量较低或透视变形时**：
+   - 关闭角度验证 (`require_rect_angle=False`)
+   - 或增大角度容差 (`angle_tolerance=20-30`)
+   - 可以检测更多不完美的矩形结构
+
+3. **处理速度优化**：
+   - 对于大图像，增加轮廓近似的容差（0.02改为0.03-0.05）
+   - 增大`min_area`和`min_length`过滤更多小轮廓
+
+## 应用场景调整
+
+1. **工业检测**：
+   ```python
+   # 高精度要求，开启角度验证
+   result = detect_long_rectangles("part.jpg", 
+                                  min_length=50,
+                                  min_aspect_ratio=8,
+                                  require_rect_angle=True,
+                                  angle_tolerance=5)
+   ```
+
+2. **建筑结构识别**：
+   ```python
+   # 允许一定角度变形
+   result = detect_long_rectangles("building.jpg", 
+                                  min_length=200,
+                                  min_aspect_ratio=4,
+                                  angle_tolerance=25)
+   ```
+
+3. **自然场景检测**：
+   ```python
+   # 关闭角度验证，更宽松的条件
+   result = detect_long_rectangles("nature.jpg", 
+                                  min_length=100,
+                                  min_aspect_ratio=3,
+                                  require_rect_angle=False)
+   ```
+
+这个整合版本结合了基础形状识别和高级几何验证，能够在各种场景下更可靠地检测长矩形区域。

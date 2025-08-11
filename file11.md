@@ -141,3 +141,267 @@ plt.show()
    - 复杂图形中设置 `blit=True`（仅更新变化部分）
 
 通过灵活运用控件和事件，可创建高度交互的数据可视化界面，适用于参数调整、实时数据监控等场景。
+
+---
+下面我将详细讲解 Python Matplotlib 中的三种常用控件（多选框、按钮、文本输入）及其事件处理机制，并提供完整的代码示例。
+
+---
+
+### Matplotlib 控件与事件系统详解
+
+#### 核心控件概览
+| 控件类型      | 类名              | 关键事件               | 主要用途                     |
+|---------------|-------------------|------------------------|----------------------------|
+| **按钮**      | `Button`          | `on_clicked`           | 触发一次性操作               |
+| **多选框**    | `CheckButtons`    | `on_clicked`           | 多选开关控制                 |
+| **文本输入**  | `TextBox`         | `on_submit`            | 接收用户文本输入             |
+
+---
+
+### 完整示例代码（包含所有三种控件）
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.widgets import Button, CheckButtons, TextBox
+
+# 创建图形和主坐标轴
+fig, ax = plt.subplots()
+plt.subplots_adjust(left=0.3, bottom=0.25)  # 为控件预留空间
+
+# 初始数据
+x = np.linspace(0, 2*np.pi, 200)
+y_sin = np.sin(x)
+y_cos = np.cos(x)
+y_tan = np.tan(x) * 0.2  # 缩放正切函数避免过大值
+
+# 绘制初始曲线
+line_sin, = ax.plot(x, y_sin, visible=True, color='red', label='sin(x)')
+line_cos, = ax.plot(x, y_cos, visible=False, color='blue', label='cos(x)')
+line_tan, = ax.plot(x, y_tan, visible=False, color='green', label='tan(x)')
+ax.set_ylim(-1.5, 1.5)
+ax.grid(True)
+ax.legend()
+
+# ==================================================================
+# 1. 多选框控件 (CheckButtons)
+# ==================================================================
+check_ax = plt.axes([0.05, 0.4, 0.15, 0.15])
+check = CheckButtons(
+    ax=check_ax,
+    labels=['正弦函数', '余弦函数', '正切函数'],
+    actives=[True, False, False]
+)
+
+# 多选框事件处理
+def toggle_lines(label):
+    if label == '正弦函数':
+        line_sin.set_visible(not line_sin.get_visible())
+    elif label == '余弦函数':
+        line_cos.set_visible(not line_cos.get_visible())
+    elif label == '正切函数':
+        line_tan.set_visible(not line_tan.get_visible())
+    plt.draw()
+
+check.on_clicked(toggle_lines)
+
+# ==================================================================
+# 2. 文本输入控件 (TextBox)
+# ==================================================================
+text_ax = plt.axes([0.05, 0.25, 0.15, 0.05])
+text_box = TextBox(text_ax, '频率:', initial="1.0")
+
+# 文本提交事件处理
+def update_frequency(text):
+    try:
+        freq = float(text)
+        # 更新所有曲线的频率
+        line_sin.set_ydata(np.sin(freq * x))
+        line_cos.set_ydata(np.cos(freq * x))
+        line_tan.set_ydata(0.2 * np.tan(freq * x))
+        ax.set_title(f"频率: {freq} Hz", fontsize=10)
+        plt.draw()
+    except ValueError:
+        text_box.set_val("1.0")  # 输入错误时重置
+
+text_box.on_submit(update_frequency)
+
+# ==================================================================
+# 3. 按钮控件 (Button)
+# ==================================================================
+button_ax = plt.axes([0.05, 0.1, 0.15, 0.06])
+button = Button(button_ax, '重置系统')
+
+# 按钮点击事件处理
+def reset_system(event):
+    # 重置多选框状态
+    check.set_active(0, True)
+    check.set_active(1, False)
+    check.set_active(2, False)
+    
+    # 重置文本输入
+    text_box.set_val("1.0")
+    
+    # 重置曲线数据和可见性
+    line_sin.set_ydata(np.sin(x))
+    line_sin.set_visible(True)
+    line_cos.set_ydata(np.cos(x))
+    line_cos.set_visible(False)
+    line_tan.set_ydata(0.2 * np.tan(x))
+    line_tan.set_visible(False)
+    
+    ax.set_title("")
+    plt.draw()
+
+button.on_clicked(reset_system)
+
+plt.show()
+```
+
+---
+
+### 控件详解与事件处理
+
+#### 1. 多选框 (CheckButtons)
+**功能**：控制多个选项的开关状态  
+**关键属性**：
+- `labels`：选项文本列表
+- `actives`：初始选中状态列表（布尔值）
+- `rectangles`：每个选项的矩形框（可自定义样式）
+
+**事件处理**：
+```python
+def callback(label):
+    # label是被点击的选项文本
+    # 根据label执行相应操作
+
+check.on_clicked(callback)
+```
+
+**高级技巧**：
+- 动态修改选项：
+  ```python
+  check.set_active(index, state)  # 设置特定选项的状态
+  ```
+- 自定义样式：
+  ```python
+  # 修改第一个选项的矩形框颜色
+  check.rectangles[0].set_facecolor('lightblue')
+  ```
+
+#### 2. 文本输入框 (TextBox)
+**功能**：接收用户文本输入  
+**关键属性**：
+- `initial`：初始文本
+- `label`：输入框前的说明文本
+
+**事件处理**：
+```python
+def callback(text):
+    # text是用户输入的字符串
+    # 处理文本并更新图形
+
+text_box.on_submit(callback)
+```
+
+**特殊事件**：
+- 按 Enter 键触发 `on_submit`
+- 文本框失去焦点时也会触发
+
+**验证技巧**：
+```python
+def validate_input(text):
+    try:
+        value = float(text)
+        if value > 0: 
+            return value
+    except:
+        pass
+    text_box.set_val("1.0")  # 非法输入时重置
+    return 1.0
+```
+
+#### 3. 按钮 (Button)
+**功能**：触发一次性操作  
+**关键属性**：
+- `label`：按钮显示的文本
+- `color`/`hovercolor`：正常/悬停状态颜色
+
+**事件处理**：
+```python
+def callback(event):
+    # event包含鼠标事件信息
+    # 执行重置或其他操作
+
+button.on_clicked(callback)
+```
+
+**样式定制**：
+```python
+button = Button(ax, '提交', 
+                color='lightblue', 
+                hovercolor='skyblue')
+```
+
+---
+
+### 事件处理机制深度解析
+
+#### 事件处理流程
+1. **事件发生**（点击、输入等）
+2. Matplotlib 事件系统捕获事件
+3. 调用注册的回调函数
+4. 回调函数修改图形属性
+5. 调用 `plt.draw()` 或 `fig.canvas.draw_idle()` 重绘
+
+#### 事件对象属性
+所有事件对象都包含：
+```python
+event.name  # 事件类型（'button_press_event'等）
+event.inaxes  # 事件发生的坐标轴
+event.xdata/ydata  # 数据坐标位置
+```
+
+#### 高效重绘技巧
+```python
+# 推荐方式（延迟重绘，优化性能）
+fig.canvas.draw_idle()  
+
+# 不推荐（立即重绘，可能造成性能瓶颈）
+plt.draw()
+```
+
+---
+
+### 常见问题解决方案
+
+**问题1：控件无响应**
+- 确保 `plt.show()` 在最后调用
+- 检查回调函数定义是否正确
+- 验证控件坐标轴是否重叠
+
+**问题2：输入验证失败**
+- 使用 try-except 捕获异常
+- 提供默认值回退机制
+- 添加输入提示文本
+
+**问题3：多选框状态同步问题**
+```python
+# 获取当前所有状态
+current_states = [line.get_visible() for line in [line_sin, line_cos, line_tan]]
+
+# 同步多选框状态
+for i, state in enumerate(current_states):
+    check.set_active(i, state)
+```
+
+**问题4：动态添加/移除控件**
+```python
+# 移除控件
+check.disconnect_events()
+
+# 添加新控件
+new_ax = plt.axes([0.8, 0.05, 0.15, 0.06])
+new_button = Button(new_ax, '新功能')
+```
+
+通过组合这些控件和事件处理技术，可以创建出高度交互的数据可视化界面，适用于参数调整、实时数据监控、教学演示等多种场景。

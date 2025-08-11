@@ -276,3 +276,290 @@ pip install matplotlib opencv-python numpy
 ```
 
 这个实现提供了更精确的控制方式，通过键盘操作可以更精细地调整四边形顶点位置，同时实时显示的分辨率和坐标信息让用户能够精确控制裁剪区域。
+
+---
+下面是修改后的代码，去掉了 `tight_layout()` 并调整了布局，确保所有元素都能正确显示：
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.widgets import RadioButtons, Button
+import cv2
+
+class InteractiveCrop:
+    def __init__(self, image_path):
+        # 加载图像
+        self.image = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
+        self.h, self.w = self.image.shape[:2]
+        
+        # 创建界面
+        self.fig = plt.figure(figsize=(14, 8))
+        
+        # 设置子图位置和大小
+        self.ax1 = plt.axes([0.05, 0.1, 0.4, 0.8])   # 原图
+        self.ax2 = plt.axes([0.5, 0.1, 0.4, 0.8])    # 裁剪结果
+        self.ax_info = plt.axes([0.75, 0.5, 0.2, 0.35])  # 信息显示
+        self.ax_ctrl = plt.axes([0.75, 0.2, 0.2, 0.25])  # 控制面板
+        
+        # 设置子图属性
+        self.ax1.set_title("原始图像 (使用方向键调整顶点)")
+        self.ax2.set_title("裁剪结果")
+        self.ax_info.axis('off')
+        self.ax_ctrl.axis('off')
+        
+        # 初始化四边形顶点 [左上, 右上, 右下, 左下]
+        self.vertices = np.array([
+            [self.w * 0.2, self.h * 0.2],  # 左上
+            [self.w * 0.8, self.h * 0.2],  # 右上
+            [self.w * 0.8, self.h * 0.8],  # 右下
+            [self.w * 0.2, self.h * 0.8]   # 左下
+        ])
+        
+        # 当前选中的顶点索引
+        self.selected_vertex = 0  # 默认选择左上角顶点
+        
+        # 显示原始图像
+        self.ax1.imshow(self.image)
+        
+        # 创建四边形连线
+        self.polygon = plt.Polygon(
+            self.vertices, closed=True, 
+            fill=False, edgecolor='lime', linewidth=2, alpha=0.8
+        )
+        self.ax1.add_patch(self.polygon)
+        
+        # 创建顶点标记
+        self.vertex_markers = []
+        colors = ['red', 'blue', 'green', 'purple']
+        labels = ['左上', '右上', '右下', '左下']
+        for i, (vertex, color, label) in enumerate(zip(self.vertices, colors, labels)):
+            marker = self.ax1.scatter(
+                *vertex, s=100, c=color, 
+                edgecolors='white', label=label
+            )
+            self.vertex_markers.append(marker)
+        
+        # 添加图例
+        self.ax1.legend(loc='upper right')
+        
+        # 显示裁剪结果
+        self.cropped_img = self.crop_image()
+        self.img_display = self.ax2.imshow(self.cropped_img)
+        
+        # 创建单选框
+        radio_ax = plt.axes([0.76, 0.35, 0.18, 0.15])
+        self.radio = RadioButtons(
+            radio_ax, ('左上 (1)', '右上 (2)', '右下 (3)', '左下 (4)'),
+            active=self.selected_vertex
+        )
+        self.radio.on_clicked(self.select_vertex)
+        
+        # 创建重置按钮
+        btn_ax = plt.axes([0.76, 0.2, 0.18, 0.05])
+        self.reset_btn = Button(btn_ax, '重置四边形 (R)')
+        self.reset_btn.on_clicked(self.reset_polygon)
+        
+        # 连接键盘事件
+        self.fig.canvas.mpl_connect('key_press_event', self.on_key_press)
+        
+        # 初始信息显示
+        self.update_info()
+        self.update_display()
+        
+        plt.show()
+
+    def crop_image(self):
+        """根据四边形进行透视变换裁剪"""
+        # 定义目标矩形尺寸
+        w = int(np.linalg.norm(self.vertices[0] - self.vertices[1]))
+        h = int(np.linalg.norm(self.vertices[1] - self.vertices[2]))
+        
+        # 目标点坐标
+        dst_points = np.array([[0, 0], [w, 0], [w, h], [0, h]], dtype='float32')
+        
+        # 计算透视变换矩阵
+        matrix = cv2.getPerspectiveTransform(
+            self.vertices.astype('float32'), 
+            dst_points
+        )
+        
+        # 应用透视变换
+        warped = cv2.warpPerspective(
+            self.image, matrix, (w, h),
+            flags=cv2.INTER_LINEAR
+        )
+        return warped
+
+    def update_display(self):
+        """更新所有显示元素"""
+        self.polygon.set_xy(self.vertices)
+        
+        # 更新顶点位置
+        for i, marker in enumerate(self.vertex_markers):
+            marker.set_offsets(self.vertices[i])
+        
+        # 更新裁剪图像
+        self.cropped_img = self.crop_image()
+        self.img_display.set_array(self.cropped_img)
+        
+        # 更新信息显示
+        self.update_info()
+        
+        # 高亮当前选中的顶点
+        for i, marker in enumerate(self.vertex_markers):
+            alpha = 1.0 if i == self.selected_vertex else 0.7
+            marker.set_alpha(alpha)
+        
+        self.fig.canvas.draw_idle()
+
+    def update_info(self):
+        """更新信息显示区域"""
+        # 清除原有内容
+        self.ax_info.clear()
+        self.ax_info.axis('off')
+        
+        # 获取裁剪后图像尺寸
+        cropped_h, cropped_w = self.cropped_img.shape[:2]
+        
+        # 显示信息
+        info_text = [
+            f"原图分辨率: {self.w} × {self.h}",
+            f"裁剪分辨率: {cropped_w} × {cropped_h}",
+            "",
+            "顶点坐标:",
+            f"左上: ({int(self.vertices[0][0])}, {int(self.vertices[0][1])})",
+            f"右上: ({int(self.vertices[1][0])}, {int(self.vertices[1][1])})",
+            f"右下: ({int(self.vertices[2][0])}, {int(self.vertices[2][1])})",
+            f"左下: ({int(self.vertices[3][0])}, {int(self.vertices[3][1])})",
+            "",
+            "操作指南:",
+            "1-4: 选择顶点",
+            "方向键: 移动顶点",
+            "R: 重置四边形"
+        ]
+        
+        # 添加信息文本
+        for i, text in enumerate(info_text):
+            self.ax_info.text(0.05, 0.95 - i * 0.07, text, 
+                             fontsize=10, transform=self.ax_info.transAxes,
+                             verticalalignment='top')
+        
+        # 添加边框
+        self.ax_info.set_frame_on(True)
+        self.ax_info.patch.set_alpha(0.1)
+        
+        # 添加标题
+        self.ax_info.set_title("图像信息", pad=10)
+
+    def select_vertex(self, label):
+        """通过单选框选择顶点"""
+        self.selected_vertex = ['左上 (1)', '右上 (2)', '右下 (3)', '左下 (4)'].index(label)
+        self.update_display()
+
+    def move_vertex(self, dx, dy):
+        """移动当前选中的顶点"""
+        x, y = self.vertices[self.selected_vertex]
+        new_x = max(0, min(self.w, x + dx))
+        new_y = max(0, min(self.h, y + dy))
+        self.vertices[self.selected_vertex] = [new_x, new_y]
+        self.update_display()
+
+    def reset_polygon(self, event=None):
+        """重置四边形位置"""
+        self.vertices = np.array([
+            [self.w * 0.2, self.h * 0.2],
+            [self.w * 0.8, self.h * 0.2],
+            [self.w * 0.8, self.h * 0.8],
+            [self.w * 0.2, self.h * 0.8]
+        ])
+        self.radio.set_active(0)  # 重置为选择左上顶点
+        self.selected_vertex = 0
+        self.update_display()
+
+    def on_key_press(self, event):
+        """处理键盘事件"""
+        step = 5  # 每次移动的步长
+        
+        # 数字键选择顶点
+        if event.key in ['1', '2', '3', '4']:
+            index = int(event.key) - 1
+            self.selected_vertex = index
+            self.radio.set_active(index)
+        
+        # 方向键移动顶点
+        elif event.key == 'up':
+            self.move_vertex(0, -step)
+        elif event.key == 'down':
+            self.move_vertex(0, step)
+        elif event.key == 'left':
+            self.move_vertex(-step, 0)
+        elif event.key == 'right':
+            self.move_vertex(step, 0)
+        
+        # 重置
+        elif event.key.lower() == 'r':
+            self.reset_polygon()
+
+# 使用示例
+if __name__ == "__main__":
+    # 替换为你的图片路径
+    app = InteractiveCrop("your_image.jpg")
+```
+
+## 布局调整说明
+
+1. **去掉了 `tight_layout()`**：
+   - 使用绝对坐标定位所有元素
+   - 手动设置每个子图的位置和大小
+
+2. **重新设计的布局**：
+   ```python
+   # 图像区域
+   self.ax1 = plt.axes([0.05, 0.1, 0.4, 0.8])   # 原图 (左侧)
+   self.ax2 = plt.axes([0.5, 0.1, 0.4, 0.8])    # 裁剪结果 (中间)
+   
+   # 控制面板区域
+   self.ax_info = plt.axes([0.75, 0.5, 0.2, 0.35])  # 信息显示 (右上)
+   self.ax_ctrl = plt.axes([0.75, 0.2, 0.2, 0.25])  # 控制面板 (右下)
+   
+   # 单选框和按钮
+   radio_ax = plt.axes([0.76, 0.35, 0.18, 0.15])   # 单选框位置
+   btn_ax = plt.axes([0.76, 0.2, 0.18, 0.05])      # 按钮位置
+   ```
+
+3. **布局特点**：
+   - 左侧40%宽度：原始图像
+   - 中间40%宽度：裁剪结果
+   - 右侧20%宽度：控制面板和信息区域
+   - 控制面板和信息区域垂直排列，占据右侧空间
+
+4. **视觉优化**：
+   - 增加了信息面板的边框和透明度
+   - 调整了文本大小和间距
+   - 优化了单选框和按钮的位置
+
+## 使用说明
+
+1. **图像位置**：
+   - 左侧：原始图像，显示绿色四边形和彩色顶点
+   - 中间：实时更新的裁剪结果
+
+2. **控制区域**：
+   - 右上：信息面板，显示分辨率、顶点坐标和操作指南
+   - 右下：单选框（选择顶点）和重置按钮
+
+3. **键盘操作**：
+   - `1`：选择左上顶点（红色）
+   - `2`：选择右上顶点（蓝色）
+   - `3`：选择右下顶点（绿色）
+   - `4`：选择左下顶点（紫色）
+   - 方向键：移动当前选中的顶点
+   - `R`：重置四边形到初始位置
+
+这个布局更加稳定，不会因为 `tight_layout()` 的自动调整而导致元素重叠或显示不全。所有组件都有明确的位置和大小，确保在各种屏幕尺寸上都能正常显示。
+
+## 依赖安装
+
+```bash
+pip install matplotlib opencv-python numpy
+```

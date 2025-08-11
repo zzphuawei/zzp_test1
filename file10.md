@@ -7,6 +7,11 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.widgets import Button
 import cv2
+matplotlib.use('TKAgg')
+
+from LYLAB import mpl
+mpl.rcParams['font.family']=['SimHei']
+mpl.rcParams['axes.unicode_minus']=False
 
 class InteractiveCrop:
     def __init__(self, image_path):

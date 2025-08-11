@@ -9,7 +9,7 @@ from matplotlib.widgets import Button
 import cv2
 matplotlib.use('TKAgg')
 
-from LYLAB import mpl
+from pylab import mpl
 mpl.rcParams['font.family']=['SimHei']
 mpl.rcParams['axes.unicode_minus']=False
 

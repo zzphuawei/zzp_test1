@@ -3,13 +3,13 @@
 ### 实现方案：
 ```python
 import numpy as np
-import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.widgets import Button
 import cv2
-matplotlib.use('TKAgg')
 
+import matplotlib
+matplotlib.use('TKAgg')
 from pylab import mpl
 mpl.rcParams['font.family']=['SimHei']
 mpl.rcParams['axes.unicode_minus']=False

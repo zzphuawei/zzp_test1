@@ -159,3 +159,9 @@ pip install matplotlib opencv-python numpy
 4. **性能优化**：对大图像使用下采样预览
 
 这个实现展示了Matplotlib创建交互式图像处理界面的能力，通过组合其绘图功能和事件处理系统，可以构建复杂的交互体验。
+
+
+---
+解决中文字符问题
+
+https://blog.csdn.net/weixin_46474921/article/details/123783987

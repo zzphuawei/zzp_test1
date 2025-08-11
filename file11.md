@@ -405,3 +405,182 @@ new_button = Button(new_ax, '新功能')
 ```
 
 通过组合这些控件和事件处理技术，可以创建出高度交互的数据可视化界面，适用于参数调整、实时数据监控、教学演示等多种场景。
+
+---
+在 Matplotlib 中添加独立文本说明（类似控件说明）的最佳方法是使用 `figtext()` 或相对坐标系的 `text()` 函数。以下是几种实现方式：
+
+### 方法 1：使用 `figtext()` 添加全局说明
+```python
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(figsize=(10, 6))
+
+# 绘制示例内容
+ax.plot([0, 1, 2], [0, 1, 4], 'b-o')
+ax.set_title("Data Visualization")
+ax.grid(True)
+
+# 添加全局说明文本 (使用相对图形坐标 0-1)
+plt.figtext(
+    0.05, 0.05,  # 左下角位置 (x, y)
+    "操作指南：\n1. 点击图例切换显示\n2. 鼠标悬停查看数值\n3. 右键拖动平移视图",
+    fontsize=12,
+    bbox=dict(boxstyle="round", facecolor='#f0f0f0', alpha=0.8),
+    ha='left',
+    va='bottom'
+)
+
+# 添加右上角说明
+plt.figtext(
+    0.95, 0.95,
+    "数据说明：\n• 蓝色线: 实际值\n• 红色线: 预测值",
+    fontsize=10,
+    bbox=dict(boxstyle="round,pad=0.5", facecolor='#fff8dc', alpha=0.9),
+    ha='right',
+    va='top'
+)
+
+plt.tight_layout()
+plt.show()
+```
+
+### 方法 2：使用相对坐标系的 `text()`
+```python
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(figsize=(10, 6))
+
+# 绘制内容
+ax.bar(['A', 'B', 'C'], [15, 25, 30], color='skyblue')
+ax.set_title("Sales Report")
+
+# 添加相对坐标系的说明 (使用 transform=ax.transAxes)
+ax.text(
+    0.5, -0.15,  # x=50%, y=轴下方15%
+    "图表说明：\n• A类产品: 基础款\n• B类产品: 升级款\n• C类产品: 旗舰款",
+    transform=ax.transAxes,  # 关键：使用相对坐标系
+    fontsize=11,
+    ha='center',
+    va='top',
+    bbox=dict(facecolor='#f9f9f9', edgecolor='#cccccc', boxstyle='round,pad=0.5')
+)
+
+# 添加侧边说明
+ax.text(
+    1.05, 0.5,  # x=轴右侧5%, y=50%
+    "数据来源：\n2023年销售数据库\n更新日期：2023-12-31",
+    transform=ax.transAxes,
+    fontsize=10,
+    rotation=90,
+    ha='left',
+    va='center'
+)
+
+plt.subplots_adjust(bottom=0.2, right=0.85)  # 调整布局留出空间
+plt.show()
+```
+
+### 方法 3：创建独立文本框（类似控件）
+```python
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+
+fig, ax = plt.subplots(figsize=(10, 6))
+
+# 主内容
+ax.scatter([1, 2, 3, 4], [10, 15, 13, 17], s=100, c='red')
+
+# 创建独立文本框
+def create_text_panel(ax, text, position, width=0.2, height=0.3):
+    """创建类似控件的文本框"""
+    left, bottom = position
+    
+    # 添加背景框
+    rect = Rectangle(
+        (left, bottom), width, height,
+        transform=ax.transAxes,
+        facecolor='#f5f5f5',
+        edgecolor='#999999',
+        alpha=0.9,
+        linewidth=1.5
+    )
+    ax.add_patch(rect)
+    
+    # 添加文本
+    ax.text(
+        left + width/2, bottom + height/2, text,
+        transform=ax.transAxes,
+        ha='center',
+        va='center',
+        fontsize=11,
+        bbox=dict(facecolor='none', edgecolor='none', pad=10)
+    )
+
+# 添加两个说明面板
+create_text_panel(
+    ax,
+    "操作提示：\n• 点击点选中\n• 双击取消选择\n• Ctrl+滚轮缩放",
+    position=(0.02, 0.7)
+)
+
+create_text_panel(
+    ax,
+    "数据说明：\n• 红色点: 异常值\n• 大小: 数据规模\n• 位置: 分布情况",
+    position=(0.75, 0.02)
+)
+
+plt.tight_layout()
+plt.show()
+```
+
+### 专业技巧：
+1. **位置控制**：
+   - 使用 `figtext()`：图形相对坐标 (0-1)
+   - 使用 `text()` + `transform=ax.transAxes`：坐标轴相对坐标
+   - 使用 `transform=fig.transFigure`：全局图形坐标
+
+2. **样式优化**：
+   ```python
+   bbox_props = dict(
+       boxstyle="round,pad=0.5",  # 圆角矩形
+       facecolor="#f8f8ff",      # 背景色
+       edgecolor="#6495ED",       # 边框色
+       alpha=0.9,                # 透明度
+       linewidth=1.5             # 边框粗细
+   )
+   ```
+
+3. **多列布局**：
+   ```python
+   from matplotlib.offsetbox import TextArea, VPacker, AnchoredOffsetbox
+   
+   # 创建多列文本
+   text1 = TextArea("列1内容\n• 项目A\n• 项目B", textprops=dict(size=10))
+   text2 = TextArea("列2内容\n• 选项X\n• 选项Y", textprops=dict(size=10))
+   
+   # 垂直打包
+   packer = VPacker(children=[text1, text2], align="center", pad=0, sep=10)
+   
+   # 锚定到图形
+   anchored_box = AnchoredOffsetbox(
+       loc='lower left',
+       child=packer,
+       pad=0.5,
+       frameon=True,
+       bbox_to_anchor=(0., 0.),
+       bbox_transform=ax.transAxes
+   )
+   ax.add_artist(anchored_box)
+   ```
+
+4. **响应式布局**：
+   ```python
+   plt.subplots_adjust(
+       left=0.1,    # 为左侧说明留空间
+       right=0.85,  # 为右侧说明留空间
+       bottom=0.15, # 为底部说明留空间
+       top=0.9      # 为顶部说明留空间
+   )
+   ```
+
+这些方法可以创建类似GUI控件的文本说明区域，适用于数据可视化仪表盘、教学材料和交互式应用的说明文档。

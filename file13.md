@@ -101,3 +101,226 @@ except KeyError:
    ```
 
 如果仍然遇到问题，可能是权限或路径格式问题，请提供具体错误信息以便进一步调试。
+
+---
+# 删除系统环境变量的完整指南
+
+在 Python 中删除环境变量也有临时删除和永久删除两种方式，具体实现取决于操作系统。以下是完整解决方案：
+
+## 1. 临时删除环境变量（当前进程有效）
+
+```python
+import os
+
+def delete_temp_env(var_name):
+    """删除当前进程的环境变量（不影响系统设置）"""
+    if var_name in os.environ:
+        del os.environ[var_name]
+        print(f"临时删除环境变量: {var_name}")
+    else:
+        print(f"环境变量 {var_name} 不存在，无需删除")
+
+# 示例用法
+delete_temp_env("MY_TEMP_VAR")
+```
+
+## 2. 永久删除环境变量
+
+### Windows 系统（使用注册表）
+
+```python
+import winreg
+import ctypes
+import os
+
+def delete_permanent_env(var_name):
+    """从Windows注册表永久删除环境变量"""
+    try:
+        # 打开环境变量注册表键
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            'Environment',
+            0,
+            winreg.KEY_READ | winreg.KEY_WRITE
+        )
+        
+        # 检查变量是否存在
+        try:
+            winreg.QueryValueEx(key, var_name)
+            exists = True
+        except FileNotFoundError:
+            exists = False
+        
+        if exists:
+            # 删除变量
+            winreg.DeleteValue(key, var_name)
+            
+            # 关闭注册表键
+            winreg.CloseKey(key)
+            
+            # 通知系统更新环境变量
+            HWND_BROADCAST = 0xFFFF
+            WM_SETTINGCHANGE = 0x1A
+            ctypes.windll.user32.SendMessageTimeoutW(
+                HWND_BROADCAST, WM_SETTINGCHANGE, 0, "Environment", 0, 1000, None
+            )
+            
+            print(f"永久删除环境变量: {var_name}")
+            return True
+        else:
+            print(f"环境变量 {var_name} 不存在，无需删除")
+            winreg.CloseKey(key)
+            return False
+            
+    except Exception as e:
+        print(f"删除环境变量失败: {str(e)}")
+        return False
+
+# 示例用法
+delete_permanent_env("MY_PERMANENT_VAR")
+```
+
+### 从 PATH 中移除特定路径（Windows）
+
+```python
+def remove_from_path(path_to_remove):
+    """从PATH环境变量中移除特定路径"""
+    try:
+        # 获取当前PATH
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            'Environment',
+            0,
+            winreg.KEY_READ | winreg.KEY_WRITE
+        )
+        current_path, _ = winreg.QueryValueEx(key, 'PATH')
+        
+        # 标准化路径（解决大小写和斜杠问题）
+        normalized_remove = os.path.normpath(path_to_remove).lower()
+        
+        # 分割路径并过滤
+        paths = current_path.split(os.pathsep)
+        new_paths = [
+            p for p in paths 
+            if os.path.normpath(p).lower() != normalized_remove
+        ]
+        
+        # 如果路径有变化，则更新
+        if len(new_paths) != len(paths):
+            new_path = os.pathsep.join(new_paths)
+            winreg.SetValueEx(key, 'PATH', 0, winreg.REG_EXPAND_SZ, new_path)
+            winreg.CloseKey(key)
+            
+            # 通知系统更新
+            HWND_BROADCAST = 0xFFFF
+            WM_SETTINGCHANGE = 0x1A
+            ctypes.windll.user32.SendMessageTimeoutW(
+                HWND_BROADCAST, WM_SETTINGCHANGE, 0, "Environment", 0, 1000, None
+            )
+            
+            print(f"已从PATH中移除: {path_to_remove}")
+            return True
+        else:
+            print(f"路径 {path_to_remove} 不在PATH中，无需移除")
+            winreg.CloseKey(key)
+            return False
+            
+    except Exception as e:
+        print(f"从PATH移除路径失败: {str(e)}")
+        return False
+
+# 示例用法
+remove_from_path(r"C:\Program Files\MyApp\bin")
+```
+
+### Linux/macOS 系统
+
+```python
+def delete_permanent_env_linux(var_name, config_file="~/.bashrc"):
+    """从Linux/Mac的配置文件中删除环境变量"""
+    config_path = os.path.expanduser(config_file)
+    temp_path = config_path + ".tmp"
+    
+    deleted = False
+    
+    try:
+        with open(config_path, 'r') as fin, open(temp_path, 'w') as fout:
+            # 正则匹配环境变量定义
+            pattern = re.compile(rf'^\s*export\s+{var_name}=.*$')
+            
+            for line in fin:
+                if pattern.match(line):
+                    deleted = True
+                    continue  # 跳过这一行（即删除）
+                fout.write(line)
+        
+        # 如果删除了变量，替换原文件
+        if deleted:
+            os.replace(temp_path, config_path)
+            print(f"已从 {config_file} 删除环境变量 {var_name}")
+            print("请重启终端或运行 `source {}` 使更改生效".format(config_file))
+            return True
+        else:
+            os.remove(temp_path)
+            print(f"环境变量 {var_name} 未在 {config_file} 中找到")
+            return False
+            
+    except Exception as e:
+        print(f"删除环境变量失败: {str(e)}")
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        return False
+
+# 示例用法
+delete_permanent_env_linux("MY_LINUX_VAR")
+```
+
+## 使用说明与注意事项
+
+1. **权限要求**：
+   - Windows：修改注册表需要管理员权限
+   - Linux：修改系统级配置文件需要root权限
+
+2. **作用范围**：
+   - `HKEY_CURRENT_USER` (Windows) 或用户配置文件 (Linux)：仅影响当前用户
+   - 系统全局修改需使用 `HKEY_LOCAL_MACHINE` (Windows) 或 `/etc/environment` (Linux)
+
+3. **PATH 特殊处理**：
+   - 修改PATH时需保留原有路径
+   - 使用 `os.pathsep` 作为分隔符确保跨平台兼容性
+   - 路径比较时考虑大小写和斜杠方向差异
+
+4. **立即生效**：
+   - Windows：使用 `SendMessageTimeoutW` 广播更改通知
+   - Linux：需要重启终端或运行 `source` 命令
+
+5. **安全提示**：
+   - 操作前备份注册表或配置文件
+   - 避免删除系统关键环境变量（如PATH）
+   - 在虚拟环境中测试后再应用到生产环境
+
+## 完整示例：安全删除环境变量
+
+```python
+def safe_delete_env(var_name, system_level=False):
+    """安全删除环境变量（跨平台）"""
+    # 临时删除
+    if var_name in os.environ:
+        del os.environ[var_name]
+    
+    # 永久删除
+    if os.name == 'nt':  # Windows
+        if system_level:
+            # 系统全局删除需要额外实现
+            print("警告：系统级删除需要特殊权限和实现")
+            return False
+        return delete_permanent_env(var_name)
+    else:  # Linux/Mac
+        config_file = "/etc/environment" if system_level else "~/.bashrc"
+        return delete_permanent_env_linux(var_name, config_file)
+
+# 示例：删除当前用户的环境变量
+safe_delete_env("OBSOLETE_VAR")
+```
+
+这些函数提供了在Python中删除环境变量的完整解决方案，涵盖了临时删除和永久删除的不同场景。

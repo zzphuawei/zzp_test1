@@ -324,3 +324,162 @@ safe_delete_env("OBSOLETE_VAR")
 ```
 
 这些函数提供了在Python中删除环境变量的完整解决方案，涵盖了临时删除和永久删除的不同场景。
+
+
+---
+在 Windows 中管理永久环境变量可以通过操作注册表实现。以下是完整的 Python 解决方案，包含检查、追加和删除环境变量的功能：
+
+```python
+import winreg
+import ctypes
+
+def check_permanent_env_var(var_name, user=True):
+    """
+    检查永久环境变量是否存在
+    :param var_name: 变量名
+    :param user: True=用户变量, False=系统变量
+    :return: 存在返回True, 否则False
+    """
+    try:
+        # 选择注册表根键和路径
+        root = winreg.HKEY_CURRENT_USER if user else winreg.HKEY_LOCAL_MACHINE
+        path = "Environment" if user else r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+        
+        # 打开注册表项
+        with winreg.OpenKey(root, path, 0, winreg.KEY_READ) as key:
+            winreg.QueryValueEx(key, var_name)
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError as e:
+        if e.winerror == 2:  # 变量不存在
+            return False
+        raise
+
+def append_permanent_env_var(var_name, new_value, user=True):
+    """
+    追加值到永久环境变量
+    :param var_name: 变量名
+    :param new_value: 要追加的值
+    :param user: True=用户变量, False=系统变量
+    """
+    # 获取当前值（如果存在）
+    current_value = ""
+    try:
+        root = winreg.HKEY_CURRENT_USER if user else winreg.HKEY_LOCAL_MACHINE
+        path = "Environment" if user else r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+        
+        with winreg.OpenKey(root, path, 0, winreg.KEY_READ) as key:
+            current_value, _ = winreg.QueryValueEx(key, var_name)
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        if e.winerror != 2:  # 忽略变量不存在的错误
+            raise
+    
+    # 处理路径分隔符
+    if current_value and not current_value.endswith(';'):
+        current_value += ';'
+    
+    # 追加新值
+    updated_value = current_value + new_value
+    
+    # 写入注册表
+    with winreg.OpenKey(root, path, 0, winreg.KEY_WRITE) as key:
+        winreg.SetValueEx(key, var_name, 0, winreg.REG_EXPAND_SZ, updated_value)
+    
+    # 通知系统更新
+    _notify_environment_change()
+
+def delete_permanent_env_var(var_name, user=True):
+    """
+    删除永久环境变量
+    :param var_name: 变量名
+    :param user: True=用户变量, False=系统变量
+    """
+    root = winreg.HKEY_CURRENT_USER if user else winreg.HKEY_LOCAL_MACHINE
+    path = "Environment" if user else r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+    
+    try:
+        # 尝试打开并删除键值
+        with winreg.OpenKey(root, path, 0, winreg.KEY_WRITE) as key:
+            winreg.DeleteValue(key, var_name)
+        
+        # 通知系统更新
+        _notify_environment_change()
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError as e:
+        if e.winerror == 2:  # 变量不存在
+            return False
+        raise
+
+def _notify_environment_change():
+    """通知Windows环境变量已变更"""
+    HWND_BROADCAST = 0xFFFF
+    WM_SETTINGCHANGE = 0x001A
+    
+    ctypes.windll.user32.SendMessageTimeoutW(
+        HWND_BROADCAST, WM_SETTINGCHANGE, 0, "Environment", 0, 1000, None
+    )
+
+if __name__ == "__main__":
+    # 使用示例
+    var_name = "MY_TEST_VAR"
+    
+    # 检查变量
+    exists = check_permanent_env_var(var_name)
+    print(f"变量 {var_name} 存在: {exists}")
+    
+    # 追加变量值
+    append_permanent_env_var(var_name, "C:\\MyNewPath")
+    print(f"已追加路径到 {var_name}")
+    
+    # 删除变量
+    if delete_permanent_env_var(var_name):
+        print(f"已删除变量 {var_name}")
+    else:
+        print(f"删除失败，变量 {var_name} 不存在")
+```
+
+### 关键功能说明：
+
+1. **检查环境变量** (`check_permanent_env_var`)
+   - 通过查询注册表判断变量是否存在
+   - 支持用户级(`HKEY_CURRENT_USER`)和系统级(`HKEY_LOCAL_MACHINE`)变量
+   - 返回布尔值表示是否存在
+
+2. **追加环境变量** (`append_permanent_env_var`)
+   - 自动处理路径分隔符（确保用分号分隔）
+   - 保留现有值并追加新值
+   - 使用`REG_EXPAND_SZ`类型支持环境变量扩展
+   - 自动通知系统更新
+
+3. **删除环境变量** (`delete_permanent_env_var`)
+   - 从注册表中删除指定变量
+   - 返回布尔值表示操作是否成功
+   - 删除后广播系统通知
+
+4. **系统通知机制** (`_notify_environment_change`)
+   - 使用`SendMessageTimeoutW`广播`WM_SETTINGCHANGE`消息
+   - 确保所有应用程序获知环境变量变更
+
+### 使用注意事项：
+
+1. **权限要求**：
+   - 用户变量：普通权限即可修改
+   - 系统变量：需要管理员权限（以管理员身份运行Python脚本）
+
+2. **路径格式**：
+   - 使用分号`;`分隔多个路径
+   - 推荐使用原始字符串处理Windows路径（如`r"C:\MyPath"`）
+
+3. **作用范围**：
+   - 新建的CMD/PowerShell窗口会继承新环境变量
+   - 已打开的窗口需要重启才能获取更新
+
+4. **变量类型**：
+   - 使用`REG_EXPAND_SZ`类型支持包含其他环境变量的路径（如`%JAVA_HOME%`）
+
+此方案完整实现了永久环境变量的管理功能，通过注册表操作确保变更持久化，并通过系统广播通知应用程序更新环境设置。

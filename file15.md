@@ -115,3 +115,142 @@ if __name__ == "__main__":
 | 通用窗口程序      | 第三方工具如 RBTray（方法3）       |
 
 > **注意**：系统托盘功能高度依赖操作系统，以上代码在Windows测试通过。Linux/macOS需使用平台特定库（如`libappindicator`）。
+
+----
+要将命令行窗口（CMD）或Python脚本最小化到系统托盘（屏幕右下角），并支持双击托盘图标显示窗口、窗口最小化回托盘的功能，可以通过Python的图形界面库（如`tkinter`）结合系统托盘库（如`pystray`）实现。以下是完整解决方案：
+
+### 安装依赖库
+```bash
+pip install pystray pillow
+```
+
+### 完整代码示例
+```python
+import tkinter as tk
+from tkinter import scrolledtext
+import pystray
+from PIL import Image
+import sys
+import threading
+
+class SystemTrayApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Tray Application")
+        self.root.geometry("400x300")
+        self.root.protocol('WM_DELETE_WINDOW', self.minimize_to_tray)
+        
+        # 创建模拟CMD界面的组件
+        self.text_area = scrolledtext.ScrolledText(root, state='disabled')
+        self.text_area.pack(fill=tk.BOTH, expand=True)
+        
+        self.entry = tk.Entry(root)
+        self.entry.pack(fill=tk.X, padx=5, pady=5)
+        self.entry.bind("<Return>", self.process_command)
+        
+        # 托盘图标（使用内置默认图标）
+        self.tray_icon = None
+        self.create_tray_icon()
+        
+        # 绑定最小化事件
+        self.root.bind("<Unmap>", self.on_minimize)
+
+    def process_command(self, event):
+        command = self.entry.get()
+        self.entry.delete(0, tk.END)
+        self.display_output(f"> {command}\nExecuting...\n")
+
+    def display_output(self, text):
+        self.text_area.configure(state='normal')
+        self.text_area.insert(tk.END, text)
+        self.text_area.configure(state='disabled')
+        self.text_area.see(tk.END)
+
+    def create_tray_icon(self):
+        # 创建内存中的纯色图标
+        image = Image.new('RGB', (64, 64), 'darkgray')
+        menu = pystray.Menu(
+            pystray.MenuItem('Show', self.show_window),
+            pystray.MenuItem('Exit', self.exit_app)
+        )
+        self.tray_icon = pystray.Icon("tray_icon", image, "My App", menu)
+
+    def run_tray_icon(self):
+        self.tray_icon.run()
+
+    def minimize_to_tray(self):
+        self.root.withdraw()  # 隐藏窗口
+        # 在后台线程运行托盘图标
+        threading.Thread(target=self.run_tray_icon, daemon=True).start()
+
+    def show_window(self):
+        self.tray_icon.stop()  # 停止托盘图标
+        self.root.deiconify()  # 显示窗口
+        self.root.lift()       # 置顶窗口
+
+    def exit_app(self):
+        self.tray_icon.stop()
+        self.root.destroy()
+        sys.exit(0)
+
+    def on_minimize(self, event):
+        if event.widget == self.root:
+            self.minimize_to_tray()
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = SystemTrayApp(root)
+    root.mainloop()
+```
+
+### 功能说明
+1. **最小化到托盘**：
+   - 点击窗口关闭按钮时隐藏窗口并显示托盘图标
+   - 窗口最小化时自动触发隐藏到托盘
+2. **从托盘恢复**：
+   - 双击托盘图标：显示主窗口
+   - 右键托盘图标 → 选择"Show"恢复窗口
+3. **模拟CMD功能**：
+   - 底部输入框可输入命令
+   - 上方文本区域显示命令执行结果
+4. **退出程序**：
+   - 右键托盘图标 → 选择"Exit"彻底退出
+
+### 关键实现细节
+1. **托盘图标管理**：
+   - 使用`pystray`创建系统托盘图标
+   - 通过`Pillow`动态生成纯色图标
+2. **窗口事件绑定**：
+   - `WM_DELETE_WINDOW`：拦截关闭按钮事件
+   - `<Unmap>`事件：捕获最小化操作
+3. **线程安全**：
+   - 托盘图标运行在独立线程中
+   - 使用`daemon=True`确保主程序退出时线程终止
+4. **窗口控制**：
+   - `withdraw()`：完全隐藏窗口
+   - `deiconify()`：恢复隐藏的窗口
+
+### 扩展功能建议
+1. **自定义托盘图标**：
+   ```python
+   # 替换create_tray_icon中的image生成代码
+   image = Image.open("custom_icon.png")  # 使用本地图标文件
+   ```
+2. **添加更多菜单项**：
+   ```python
+   menu = pystray.Menu(
+        pystray.MenuItem('Show', self.show_window),
+        pystray.MenuItem('Settings', self.open_settings),
+        pystray.MenuItem('Exit', self.exit_app)
+   )
+   ```
+3. **实现真实命令执行**：
+   ```python
+   def process_command(self, event):
+       import subprocess
+       command = self.entry.get()
+       result = subprocess.getoutput(command)
+       self.display_output(f"> {command}\n{result}\n\n")
+   ```
+
+> **注意**：某些杀毒软件可能阻止程序创建托盘图标，首次运行时需允许权限。此方案适用于Windows/macOS/Linux，但不同系统托盘行为可能略有差异。

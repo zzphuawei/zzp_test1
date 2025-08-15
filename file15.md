@@ -403,3 +403,173 @@ def setup_tray():
 3. **子进程未关闭**：确保通过托盘菜单退出程序
 
 这个方案将你的第三方脚本包装在托盘应用中，实现了专业级的窗口管理体验。
+
+---
+您提出了两个关键问题，我将修正方案以满足您的需求：
+
+### 修正方案
+1. **问题1**：直接控制 A.py 的窗口（而非父窗口）
+2. **问题2**：实现真正的"最小化到托盘"（而非任务栏最小化）
+
+### 完整解决方案 (`run_hidden.py`)
+```python
+import subprocess
+import win32gui
+import win32con
+import win32process
+import sys
+import threading
+import os
+import time
+import psutil
+from PIL import Image
+import pystray
+
+# 全局变量
+target_hwnd = None
+process = None
+tray_icon = None
+console_pid = None
+
+def find_console_window(pid):
+    """根据进程ID查找控制台窗口句柄"""
+    def callback(hwnd, hwnds):
+        if win32gui.IsWindowVisible(hwnd):
+            _, found_pid = win32process.GetWindowThreadProcessId(hwnd)
+            if found_pid == pid:
+                class_name = win32gui.GetClassName(hwnd)
+                if class_name == "ConsoleWindowClass":
+                    hwnds.append(hwnd)
+        return True
+    
+    hwnds = []
+    win32gui.EnumWindows(callback, hwnds)
+    return hwnds[0] if hwnds else None
+
+def hide_console():
+    """隐藏控制台窗口"""
+    global target_hwnd
+    if target_hwnd:
+        # 保存窗口位置
+        rect = win32gui.GetWindowRect(target_hwnd)
+        with open("window_pos.txt", "w") as f:
+            f.write(f"{rect[0]},{rect[1]},{rect[2]},{rect[3]}")
+        
+        # 隐藏窗口
+        win32gui.ShowWindow(target_hwnd, win32con.SW_HIDE)
+        return True
+    return False
+
+def show_console():
+    """显示控制台窗口"""
+    global target_hwnd
+    if target_hwnd:
+        # 恢复窗口位置（如果保存过）
+        try:
+            with open("window_pos.txt", "r") as f:
+                pos = f.read().split(',')
+                left, top, right, bottom = map(int, pos)
+                win32gui.SetWindowPos(target_hwnd, win32con.HWND_TOP, 
+                                     left, top, right-left, bottom-top,
+                                     win32con.SWP_SHOWWINDOW)
+        except:
+            win32gui.ShowWindow(target_hwnd, win32con.SW_RESTORE)
+        
+        win32gui.SetForegroundWindow(target_hwnd)
+        return True
+    return False
+
+def minimize_to_tray(hwnd):
+    """窗口最小化时隐藏到托盘"""
+    if win32gui.IsIconic(hwnd):  # 检查是否最小化
+        hide_console()
+
+def start_script():
+    """启动A.py脚本"""
+    global process, console_pid, target_hwnd
+    
+    script_path = os.path.join(os.path.dirname(__file__), "A.py")
+    process = subprocess.Popen(
+        [sys.executable, script_path],
+        creationflags=subprocess.CREATE_NEW_CONSOLE
+    )
+    
+    # 获取控制台进程ID
+    console_pid = None
+    for _ in range(20):  # 最多尝试20次
+        try:
+            children = psutil.Process(process.pid).children()
+            if children:
+                console_pid = children[0].pid
+                break
+        except:
+            pass
+        time.sleep(0.5)
+    
+    if not console_pid:
+        print("无法获取控制台进程ID")
+        tray_icon.stop()
+        os._exit(1)
+    
+    # 查找控制台窗口
+    for _ in range(10):  # 最多尝试10次
+        target_hwnd = find_console_window(console_pid)
+        if target_hwnd:
+            # 设置窗口钩子
+            win32gui.SetWindowLong(target_hwnd, win32con.GWL_WNDPROC, wnd_proc)
+            break
+        time.sleep(0.5)
+    
+    if not target_hwnd:
+        print("无法找到控制台窗口")
+        tray_icon.stop()
+        os._exit(1)
+    
+    # 等待进程结束
+    process.wait()
+    tray_icon.stop()
+    os._exit(0)
+
+def wnd_proc(hwnd, msg, wparam, lparam):
+    """窗口消息处理"""
+    if msg == win32con.WM_SYSCOMMAND:
+        if wparam == win32con.SC_MINIMIZE:  # 最小化消息
+            minimize_to_tray(hwnd)
+            return 0  # 阻止默认行为
+    
+    return win32gui.CallWindowProc(original_wnd_proc, hwnd, msg, wparam, lparam)
+
+def on_show(icon, item):
+    """显示窗口"""
+    show_console()
+
+def on_hide(icon, item):
+    """隐藏窗口"""
+    hide_console()
+
+def on_exit(icon, item):
+    """退出程序"""
+    global process
+    if process:
+        try:
+            # 终止整个进程树
+            parent = psutil.Process(process.pid)
+            for child in parent.children(recursive=True):
+                child.terminate()
+            parent.terminate()
+        except:
+            pass
+    icon.stop()
+    os._exit(0)
+
+def setup_tray():
+    """设置托盘图标"""
+    global tray_icon
+    # 创建图标
+    image = Image.new('RGB', (64, 64), color='blue')
+    
+    # 创建菜单
+    menu = pystray.Menu(
+        pystray.MenuItem("显示控制台", on_show),
+        pystray.MenuItem("隐藏控制台", on_hide),
+        pystray.MenuItem("退出", on_exit

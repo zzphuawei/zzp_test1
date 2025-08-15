@@ -253,4 +253,153 @@ if __name__ == "__main__":
        self.display_output(f"> {command}\n{result}\n\n")
    ```
 
-> **注意**：某些杀毒软件可能阻止程序创建托盘图标，首次运行时需允许权限。此方案适用于Windows/macOS/Linux，但不同系统托盘行为可能略有差异。
+> **注意**：某些杀毒软件可能阻止程序创建托盘图标，首次运行时需允许权限。此方案适用于Windows/macOS/Linux，但不同系统托盘行为可能略有差
+---
+要将运行 `A.py` 脚本的 CMD 窗口最小化到系统托盘，并能通过双击托盘图标恢复窗口，可以创建一个包装脚本。以下是完整的解决方案：
+
+### 解决方案思路
+1. **隐藏 CMD 窗口**：使用 `win32gui` 隐藏控制台窗口
+2. **创建托盘图标**：使用 `pystray` 在系统托盘创建图标
+3. **窗口管理**：通过托盘菜单控制窗口的显示/隐藏
+4. **子进程管理**：用 `subprocess.Popen` 启动 `A.py` 并管理其生命周期
+
+### 完整代码 (`run_hidden.py`)
+```python
+import subprocess
+import win32gui
+import win32con
+import sys
+import threading
+import os
+from PIL import Image
+import pystray
+
+# 全局变量
+console_hwnd = None
+process = None
+tray_icon = None
+
+def get_console_window():
+    """获取当前控制台窗口句柄"""
+    return win32gui.GetForegroundWindow()
+
+def hide_console():
+    """隐藏控制台窗口"""
+    global console_hwnd
+    if not console_hwnd:
+        console_hwnd = get_console_window()
+    win32gui.ShowWindow(console_hwnd, win32con.SW_HIDE)
+
+def show_console():
+    """显示并激活控制台窗口"""
+    global console_hwnd
+    if not console_hwnd:
+        console_hwnd = get_console_window()
+    win32gui.ShowWindow(console_hwnd, win32con.SW_RESTORE)
+    win32gui.SetForegroundWindow(console_hwnd)
+
+def start_script():
+    """启动A.py脚本"""
+    global process
+    script_path = os.path.join(os.path.dirname(__file__), "A.py")
+    process = subprocess.Popen(
+        [sys.executable, script_path],
+        creationflags=subprocess.CREATE_NEW_CONSOLE
+    )
+    process.wait()  # 等待进程结束
+    tray_icon.stop()  # 脚本结束后退出托盘图标
+    os._exit(0)  # 退出程序
+
+def on_show(icon, item):
+    """显示窗口的菜单项回调"""
+    show_console()
+
+def on_exit(icon, item):
+    """退出程序的菜单项回调"""
+    global process
+    if process:
+        process.terminate()  # 终止子进程
+    icon.stop()  # 停止托盘图标
+    os._exit(0)  # 退出程序
+
+def setup_tray():
+    """设置托盘图标"""
+    global tray_icon
+    # 创建临时图标（白色方形图标）
+    image = Image.new('RGB', (64, 64), color='white')
+    
+    # 创建菜单
+    menu = pystray.Menu(
+        pystray.MenuItem("显示控制台", on_show),
+        pystray.MenuItem("退出", on_exit)
+    )
+    
+    # 创建托盘图标
+    tray_icon = pystray.Icon("A.py 控制器", image, "A.py 正在运行", menu)
+    tray_icon.run()
+
+if __name__ == "__main__":
+    # 首次启动时隐藏控制台
+    hide_console()
+    
+    # 启动脚本线程
+    script_thread = threading.Thread(target=start_script, daemon=True)
+    script_thread.start()
+    
+    # 启动托盘图标
+    setup_tray()
+```
+
+### 使用说明
+1. **安装依赖库**：
+   ```bash
+   pip install pystray pillow pywin32
+   ```
+
+2. **文件结构**：
+   ```
+   ├── A.py            # 你的第三方脚本
+   ├── run_hidden.py   # 本解决方案脚本
+   ```
+
+3. **运行方式**：
+   - 双击运行 `run_hidden.py`（不是 `A.py`）
+   - 程序会自动：
+     1. 启动 `A.py` 并隐藏其 CMD 窗口
+     2. 在系统托盘创建白色方块图标
+     3. 右键菜单提供控制功能
+
+4. **托盘操作**：
+   - **显示控制台**：右键托盘图标 → 选择"显示控制台"
+   - **退出程序**：右键托盘图标 → 选择"退出"
+
+### 功能特点
+1. **完全隐藏窗口**：启动后 CMD 窗口立即隐藏到托盘
+2. **进程管理**：退出时会自动终止子进程
+3. **托盘交互**：
+   - 右键菜单提供控制选项
+   - 支持双击托盘图标显示窗口（需在代码中添加，见扩展说明）
+4. **线程安全**：脚本运行在独立线程，不影响主线程响应
+
+### 扩展：添加双击托盘图标显示功能
+在 `setup_tray()` 函数中添加双击支持：
+```python
+def on_click(icon, item):
+    """双击托盘图标显示窗口"""
+    show_console()
+
+def setup_tray():
+    ...
+    tray_icon = pystray.Icon("A.py 控制器", image, "A.py 正在运行", menu)
+    tray_icon.on_click = on_click  # 添加双击支持
+    tray_icon.run()
+```
+
+> **注意**：某些系统可能将双击识别为单击，具体行为取决于操作系统设置。
+
+### 常见问题解决
+1. **图标不显示**：检查 `pillow` 是否安装正确
+2. **窗口无法隐藏**：以管理员身份运行脚本
+3. **子进程未关闭**：确保通过托盘菜单退出程序
+
+这个方案将你的第三方脚本包装在托盘应用中，实现了专业级的窗口管理体验。

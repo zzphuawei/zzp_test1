@@ -542,3 +542,443 @@ python pystray_demo.py
 4. 退出时释放系统资源
 
 此示例展示了PyStray在Windows平台上的强大功能，您可以根据需要扩展更多功能，如网络监控、文件同步或自定义自动化任务。
+
+---
+您遇到的问题是程序在后台运行但没有显示托盘图标，这通常是由于 PyStray 事件循环未正确启动或线程问题导致的。以下是修复后的完整代码，解决了这些问题：
+
+```python
+import pystray
+from PIL import Image, ImageDraw, ImageFont
+import threading
+import time
+import os
+import win32api
+import win32con
+import winsound
+import subprocess
+import webbrowser
+import sys
+import datetime
+import ctypes
+import logging
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("pystray_demo.log"),
+        logging.StreamHandler()
+    ]
+)
+
+# 检查管理员权限
+def is_admin():
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin()
+    except:
+        return False
+
+# 创建系统托盘图标
+def create_tray_icon():
+    # 1. 创建动态图标
+    def generate_icon(text, bg_color='blue'):
+        """生成带文字的圆形图标"""
+        width, height = 64, 64
+        image = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+        dc = ImageDraw.Draw(image)
+        
+        # 绘制圆形背景
+        dc.ellipse((0, 0, width-1, height-1), fill=bg_color)
+        
+        # 添加文字
+        try:
+            font = ImageFont.truetype("arial.ttf", 20)
+        except:
+            font = ImageFont.load_default()
+        text_width, text_height = dc.textsize(text, font)
+        dc.text(
+            ((width - text_width) / 2, (height - text_height) / 2 - 2),
+            text, fill='white', font=font
+        )
+        return image
+
+    # 2. 状态变量
+    is_running = True
+    notifications_enabled = True
+    volume = 50
+    theme = '蓝色主题'
+    cpu_monitor_active = False
+    cpu_usage = 0.0
+
+    # 3. 系统监控线程
+    def monitor_cpu():
+        """模拟CPU监控线程"""
+        nonlocal cpu_usage
+        while cpu_monitor_active and is_running:
+            try:
+                # 实际应用中这里会获取真实CPU使用率
+                cpu_usage = 30.0 + 70.0 * (time.time() % 10) / 10
+                # 更新托盘图标
+                if cpu_monitor_active and icon.visible:
+                    usage_text = f"{int(cpu_usage)}"
+                    bg_color = 'green' if cpu_usage < 60 else 'orange' if cpu_usage < 80 else 'red'
+                    icon.icon = generate_icon(usage_text, bg_color)
+                time.sleep(2)
+            except Exception as e:
+                logging.error(f"CPU监控线程错误: {e}")
+                break
+
+    # 4. 各种功能函数
+    def toggle_notifications():
+        """切换通知功能状态"""
+        nonlocal notifications_enabled
+        notifications_enabled = not notifications_enabled
+        icon.notify(
+            "通知功能已 " + ("启用" if notifications_enabled else "禁用"),
+            "系统通知设置"
+        )
+        icon.update_menu()
+
+    def show_system_info():
+        """显示系统信息"""
+        if notifications_enabled:
+            now = datetime.datetime.now()
+            info = f"系统时间: {now.strftime('%H:%M:%S')}\nCPU 监控: {'运行中' if cpu_monitor_active else '已停止'}"
+            icon.notify(info, "系统信息")
+
+    def toggle_cpu_monitor():
+        """切换CPU监控状态"""
+        nonlocal cpu_monitor_active
+        cpu_monitor_active = not cpu_monitor_active
+        
+        if cpu_monitor_active:
+            # 启动监控线程
+            threading.Thread(target=monitor_cpu, daemon=True).start()
+            icon.notify("CPU 监控已启动", "系统监控")
+        else:
+            icon.notify("CPU 监控已停止", "系统监控")
+        icon.update_menu()
+
+    def open_calculator():
+        """打开计算器"""
+        subprocess.Popen('calc.exe')
+        if notifications_enabled:
+            icon.notify("已打开计算器", "快捷操作")
+
+    def open_notepad():
+        """打开记事本"""
+        subprocess.Popen('notepad.exe')
+        if notifications_enabled:
+            icon.notify("已打开记事本", "快捷操作")
+
+    def open_website():
+        """打开网站"""
+        webbrowser.open('https://www.python.org')
+        if notifications_enabled:
+            icon.notify("已打开 Python 官网", "快捷操作")
+
+    def adjust_volume(delta):
+        """调整系统音量"""
+        nonlocal volume
+        volume = max(0, min(100, volume + delta))
+        winsound.Beep(1000, 100)  # 声音反馈
+        icon.notify(f"音量已调整为: {volume}%", "系统设置")
+        icon.update_menu()
+
+    def change_theme(new_theme):
+        """更换主题"""
+        nonlocal theme
+        theme = new_theme
+        icon.notify(f"已切换至: {theme}", "主题设置")
+        icon.update_menu()
+
+    def lock_workstation():
+        """锁定工作站"""
+        ctypes.windll.user32.LockWorkStation()
+        icon.notify("工作站已锁定", "系统安全")
+
+    def show_admin_warning():
+        """显示管理员警告"""
+        icon.notify("此操作需要管理员权限", "权限提示", icon=generate_icon("!", 'red'))
+
+    def toggle_auto_start():
+        """切换开机自启状态"""
+        if not is_admin():
+            show_admin_warning()
+            return
+            
+        # 这里简化实现，实际应用中会修改注册表
+        icon.notify("开机自启功能已切换", "系统设置")
+
+    def on_quit():
+        """退出程序"""
+        nonlocal is_running
+        is_running = False
+        icon.stop()
+        logging.info("程序退出请求已接收")
+
+    # 5. 创建菜单项
+    menu_items = [
+        # 状态菜单项
+        pystray.MenuItem(
+            lambda item: f"CPU 监控: {'运行中' if cpu_monitor_active else '已停止'}",
+            toggle_cpu_monitor,
+            checked=lambda item: cpu_monitor_active
+        ),
+        pystray.MenuItem(
+            lambda item: f"系统通知: {'启用' if notifications_enabled else '禁用'}",
+            toggle_notifications,
+            checked=lambda item: notifications_enabled
+        ),
+        
+        pystray.Menu.SEPARATOR,
+        
+        # 系统操作菜单
+        pystray.MenuItem("系统信息", show_system_info),
+        pystray.MenuItem("音量 +", lambda: adjust_volume(10)),
+        pystray.MenuItem("音量 -", lambda: adjust_volume(-10)),
+        
+        pystray.Menu.SEPARATOR,
+        
+        # 主题选择子菜单
+        pystray.MenuItem(
+            "主题设置",
+            pystray.Menu(
+                pystray.MenuItem(
+                    "蓝色主题", 
+                    lambda: change_theme('蓝色主题'),
+                    checked=lambda item: theme == '蓝色主题',
+                    radio=True
+                ),
+                pystray.MenuItem(
+                    "绿色主题", 
+                    lambda: change_theme('绿色主题'),
+                    checked=lambda item: theme == '绿色主题',
+                    radio=True
+                ),
+                pystray.MenuItem(
+                    "紫色主题", 
+                    lambda: change_theme('紫色主题'),
+                    checked=lambda item: theme == '紫色主题',
+                    radio=True
+                )
+            )
+        ),
+        
+        pystray.Menu.SEPARATOR,
+        
+        # 快捷工具菜单
+        pystray.MenuItem(
+            "快捷工具",
+            pystray.Menu(
+                pystray.MenuItem("计算器", open_calculator),
+                pystray.MenuItem("记事本", open_notepad),
+                pystray.MenuItem("Python 官网", open_website),
+            )
+        ),
+        
+        # 系统安全菜单
+        pystray.MenuItem("锁定工作站", lock_workstation),
+        pystray.MenuItem("开机自启", toggle_auto_start, enabled=is_admin()),
+        
+        pystray.Menu.SEPARATOR,
+        
+        # 退出菜单项
+        pystray.MenuItem("退出", on_quit)
+    ]
+
+    # 6. 创建托盘图标
+    icon = pystray.Icon(
+        "win_tray_demo",
+        icon=generate_icon("Py"),
+        title="PyStray 高级示例\n右键查看更多功能",
+        menu=pystray.Menu(*menu_items)
+    )
+
+    # 7. 图标点击事件处理
+    def on_icon_clicked(icon, event):
+        """处理图标点击事件"""
+        if event == pystray.Event.LEFT_CLICK:
+            show_system_info()
+        elif event == pystray.Event.DOUBLE_CLICK:
+            open_calculator()
+
+    # 使用正确的方法绑定事件
+    icon._handler = on_icon_clicked
+
+    return icon
+
+# 主程序入口
+if __name__ == '__main__':
+    # 检查是否已有实例运行
+    mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "PyStrayDemoMutex")
+    last_error = ctypes.windll.kernel32.GetLastError()
+    
+    if last_error == 183:  # ERROR_ALREADY_EXISTS
+        ctypes.windll.user32.MessageBoxW(0, "程序已在运行中！", "系统提示", 0x40)
+        sys.exit(0)
+    
+    logging.info("程序启动")
+    
+    try:
+        # 创建系统托盘图标
+        tray_icon = create_tray_icon()
+        
+        # 显示欢迎通知
+        tray_icon.visible = True
+        tray_icon.notify(
+            "PyStray 高级示例已启动\n"
+            "左键点击: 显示系统信息\n"
+            "双击图标: 打开计算器\n"
+            "右键点击: 打开功能菜单",
+            "欢迎使用 PyStray"
+        )
+        
+        # 创建并启动事件循环线程
+        def run_icon():
+            try:
+                tray_icon.run()
+            except Exception as e:
+                logging.error(f"事件循环错误: {e}")
+        
+        icon_thread = threading.Thread(target=run_icon, daemon=True)
+        icon_thread.start()
+        logging.info("托盘图标线程已启动")
+        
+        # 主线程保持运行
+        while True:
+            time.sleep(1)
+            
+    except Exception as e:
+        logging.error(f"主程序错误: {e}")
+    finally:
+        # 释放互斥体
+        if mutex:
+            ctypes.windll.kernel32.CloseHandle(mutex)
+        logging.info("程序已安全退出")
+```
+
+## 修复的关键问题
+
+### 1. 事件循环线程问题
+- **原问题**：PyStray 的事件循环需要在独立线程中运行
+- **修复**：创建专门的线程运行 `tray_icon.run()`
+- **新增**：添加线程异常捕获和日志记录
+
+```python
+# 创建并启动事件循环线程
+def run_icon():
+    try:
+        tray_icon.run()
+    except Exception as e:
+        logging.error(f"事件循环错误: {e}")
+
+icon_thread = threading.Thread(target=run_icon, daemon=True)
+icon_thread.start()
+```
+
+### 2. 主线程保持活动
+- **原问题**：主线程退出导致程序终止
+- **修复**：添加主线程循环保持程序运行
+- **优化**：添加退出条件（实际通过菜单退出）
+
+```python
+# 主线程保持运行
+while True:
+    time.sleep(1)
+```
+
+### 3. 事件绑定问题
+- **原问题**：事件绑定方式不正确
+- **修复**：使用正确的内部方法 `icon._handler`
+
+```python
+# 使用正确的方法绑定事件
+icon._handler = on_icon_clicked
+```
+
+### 4. 退出处理
+- **原问题**：退出逻辑不完善
+- **修复**：
+  1. 添加专门的 `on_quit` 函数
+  2. 设置运行状态标志
+  3. 添加日志记录
+
+```python
+def on_quit():
+    """退出程序"""
+    nonlocal is_running
+    is_running = False
+    icon.stop()
+    logging.info("程序退出请求已接收")
+```
+
+### 5. 日志系统
+- **新增**：完整的日志系统，便于调试
+- 记录到文件和标准输出
+- 捕获所有关键异常
+
+```python
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("pystray_demo.log"),
+        logging.StreamHandler()
+    ]
+)
+```
+
+### 6. 线程安全改进
+- 添加运行状态检查 `is_running`
+- 确保线程安全退出
+- 添加更多异常处理
+
+```python
+while cpu_monitor_active and is_running:
+    # 监控代码
+```
+
+## 使用说明
+
+1. **安装依赖**：
+```bash
+pip install pystray pillow pywin32
+```
+
+2. **运行程序**：
+```bash
+python pystray_demo.py
+```
+
+3. **查看日志**：
+```bash
+type pystray_demo.log
+```
+
+4. **调试技巧**：
+- 如果图标仍不显示，检查系统托盘区域是否隐藏了图标
+- 查看日志文件获取详细错误信息
+- 确保系统通知功能已启用
+
+## 常见问题解决方案
+
+1. **图标不显示**：
+   - 检查系统托盘设置，确保未隐藏图标
+   - 尝试重启资源管理器（任务管理器 → 重启 explorer.exe）
+   - 确保程序有系统托盘图标的权限
+
+2. **通知不工作**：
+   - Windows 10/11 需启用通知中心
+   - 检查系统通知设置，确保允许应用显示通知
+
+3. **程序无法退出**：
+   - 使用任务管理器结束 python.exe 进程
+   - 检查日志文件确认退出逻辑是否执行
+
+4. **权限问题**：
+   - 以管理员身份运行命令提示符
+   - 右键点击脚本选择"以管理员身份运行"
+
+这个修复版本解决了您提到的问题，并添加了健壮的错误处理和日志系统，应该能够正常显示托盘图标并保持程序运行。

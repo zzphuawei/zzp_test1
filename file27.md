@@ -111,104 +111,106 @@ if __name__ == "__main__":
 如果您需要更具体的实现，请提供您的操作系统和USB设备信息。
 
 ------
-# 获取 USB 设备 VID 和 PID 信息
+# 使用WMI获取USB设备信息
 
-在 Python 中，您可以使用 `pyudev` 库来获取 USB 设备的 VID (Vendor ID) 和 PID (Product ID) 信息。下面是一个简单的实现：
+在Python中，您可以使用WMI模块来获取USB设备信息。对于您提供的设备实例路径 `USB\\VID_1234&PID_5678\\1234567890`，以下是获取该设备信息的完整代码：
 
 ```python
-import pyudev
+import wmi
 
-def get_usb_devices():
-    """获取所有USB设备信息"""
-    context = pyudev.Context()
-    devices = []
+def get_usb_device_info(device_instance_id):
+    """
+    根据设备实例ID获取USB设备信息
     
-    for device in context.list_devices(subsystem='usb', DEVTYPE='usb_device'):
-        vid = device.get('ID_VENDOR_ID', 'N/A')
-        pid = device.get('ID_MODEL_ID', 'N/A')
-        serial = device.get('ID_SERIAL_SHORT', 'N/A')
-        vendor = device.get('ID_VENDOR', 'N/A')
-        product = device.get('ID_MODEL', 'N/A')
+    参数:
+        device_instance_id: 设备实例ID，如 USB\\VID_1234&PID_5678\\1234567890
+    """
+    c = wmi.WMI()
+    
+    try:
+        # 查询Win32_PnPEntity以匹配设备实例ID
+        devices = c.query(f"SELECT * FROM Win32_PnPEntity WHERE DeviceID = '{device_instance_id}'")
         
-        devices.append({
-            'vid': vid,
-            'pid': pid,
-            'serial': serial,
-            'vendor': vendor,
-            'product': product,
-            'device_path': device.device_path
-        })
-    
-    return devices
+        if devices:
+            device = devices[0]
+            print("找到匹配的USB设备:")
+            print(f"设备描述: {device.Description}")
+            print(f"设备ID: {device.DeviceID}")
+            print(f"名称: {device.Name}")
+            print(f"制造商: {device.Manufacturer}")
+            print(f"状态: {device.Status}")
+            print(f"PNP设备ID: {device.PNPDeviceID}")
+            
+            # 尝试获取更多详细信息
+            try:
+                usb_controllers = c.query("ASSOCIATORS OF {Win32_PnPEntity.DeviceID='" + 
+                                         device_instance_id.replace("'", "''") + 
+                                         "'} WHERE AssocClass=Win32_USBControllerDevice")
+                if usb_controllers:
+                    print(f"连接的USB控制器: {usb_controllers[0].DeviceID}")
+            except Exception as e:
+                print(f"获取USB控制器信息时出错: {e}")
+        else:
+            print("未找到匹配的USB设备")
+            
+    except Exception as e:
+        print(f"查询设备时出错: {e}")
 
-def find_device_by_vid_pid(vid, pid):
-    """根据VID和PID查找特定设备"""
-    context = pyudev.Context()
+def get_all_usb_devices():
+    """
+    获取所有USB设备的信息
+    """
+    c = wmi.WMI()
     
-    for device in context.list_devices(subsystem='usb', DEVTYPE='usb_device'):
-        device_vid = device.get('ID_VENDOR_ID')
-        device_pid = device.get('ID_MODEL_ID')
-        
-        if device_vid == vid and device_pid == pid:
-            return {
-                'vid': device_vid,
-                'pid': device_pid,
-                'serial': device.get('ID_SERIAL_SHORT', 'N/A'),
-                'vendor': device.get('ID_VENDOR', 'N/A'),
-                'product': device.get('ID_MODEL', 'N/A'),
-                'device_path': device.device_path
-            }
-    
-    return None
-
-# 示例使用
-if __name__ == "__main__":
-    # 获取所有USB设备
-    devices = get_usb_devices()
     print("所有USB设备:")
-    for i, device in enumerate(devices, 1):
-        print(f"{i}. VID: {device['vid']}, PID: {device['pid']}, 序列号: {device['serial']}")
-        print(f"   厂商: {device['vendor']}, 产品: {device['product']}")
-        print()
+    print("-" * 50)
     
-    # 查找特定设备 (示例VID和PID)
-    target_vid = "1234"
-    target_pid = "5678"
-    specific_device = find_device_by_vid_pid(target_vid, target_pid)
+    # 获取所有USB设备
+    usb_devices = c.Win32_USBControllerDevice()
     
-    if specific_device:
-        print(f"找到设备 VID:{target_vid} PID:{target_pid}:")
-        print(f"序列号: {specific_device['serial']}")
-        print(f"厂商: {specific_device['vendor']}")
-        print(f"产品: {specific_device['product']}")
-    else:
-        print(f"未找到设备 VID:{target_vid} PID:{target_pid}")
+    for usb_device in usb_devices:
+        try:
+            # 获取关联的PnP设备
+            pnp_device = c.Win32_PnPEntity(DeviceID=usb_device.Dependent.DeviceID)[0]
+            
+            print(f"设备ID: {pnp_device.DeviceID}")
+            print(f"描述: {pnp_device.Description}")
+            print(f"状态: {pnp_device.Status}")
+            print("-" * 30)
+        except:
+            continue
+
+if __name__ == "__main__":
+    # 您提供的设备实例ID
+    device_id = "USB\\VID_1234&PID_5678\\1234567890"
+    
+    # 查找特定设备
+    get_usb_device_info(device_id)
+    
+    print("\n")
+    
+    # 列出所有USB设备
+    get_all_usb_devices()
 ```
 
 ## 安装必要的库
 
-在运行代码前，需要先安装 `pyudev` 库：
+在运行上述代码前，您需要安装WMI库：
 
 ```bash
-pip install pyudev
+pip install wmi
 ```
 
 ## 代码说明
 
-1. `get_usb_devices()` 函数返回所有连接的USB设备信息
-2. `find_device_by_vid_pid(vid, pid)` 函数根据指定的VID和PID查找特定设备
-3. 返回的信息包括：
-   - VID (Vendor ID)
-   - PID (Product ID)
-   - 序列号
-   - 厂商名称
-   - 产品名称
-   - 设备路径
+1. **get_usb_device_info()** 函数根据设备实例ID查找特定USB设备
+2. **get_all_usb_devices()** 函数列出所有USB设备信息
+3. 代码使用WMI查询Win32_PnPEntity和Win32_USBControllerDevice类来获取USB设备信息
 
 ## 注意事项
 
-- 在Linux系统上运行此代码可能需要管理员权限
-- Windows系统可能需要额外的驱动或库支持
-- 示例中的VID(1234)和PID(5678)是示例值，您需要替换为实际要查找的值
+- 设备实例ID需要精确匹配，包括大小写
+- 某些设备可能需要管理员权限才能访问详细信息
+- 如果设备不存在或未连接，将无法找到匹配项
 
-如果您需要更详细的信息或有特定的使用场景，请提供更多细节。
+您可以根据需要修改代码，提取更多设备属性或过滤特定类型的USB设备。

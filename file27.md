@@ -214,3 +214,104 @@ pip install wmi
 - 如果设备不存在或未连接，将无法找到匹配项
 
 您可以根据需要修改代码，提取更多设备属性或过滤特定类型的USB设备。
+
+
+------
+可以用 `pnputil` 命令来控制 USB 设备的禁用与启用，并通过 Python 脚本实现定时操作。下面我将给你提供一种直接的方式。
+
+### 核心方法说明
+
+`pnputil` 可以启用或禁用 USB 设备，但需要先获取目标设备的 **实例 ID**。核心思路是：
+1.  **获取设备实例 ID**：通过 `pnputil` 枚举设备并筛选出目标设备。
+2.  **禁用设备**：使用 `pnputil /disable-device`。
+3.  **等待指定时间**：使用 `time.sleep()`。
+4.  **重新启用设备**：使用 `pnputil /enable-device`。
+
+---
+
+### Python 代码示例
+
+```python
+import subprocess
+import time
+
+# 目标USB设备的实例ID（需要替换为你实际的设备ID）
+# 例如：USB\VID_1234&PID_5678\5&12345678&0&1
+DEVICE_INSTANCE_ID = "USB\\VID_1234&PID_5678\\5&12345678&0&1"  # 请修改为你的设备ID
+
+def control_usb(device_id, action):
+    """使用pnputil禁用或启用USB设备
+    :param device_id: 设备实例ID
+    :param action: 操作类型，"disable" 或 "enable"
+    """
+    try:
+        if action not in ["disable", "enable"]:
+            raise ValueError("操作类型必须是 'disable' 或 'enable'")
+        
+        # 构建命令
+        cmd = ["pnputil", f"/{action}-device", device_id]
+        
+        # 执行命令，以管理员身份运行（脚本本身需要以管理员权限运行）
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=30)
+        print(f"设备 {device_id} {action} 操作成功：{result.stdout}")
+    except subprocess.CalledProcessError as e:
+        print(f"操作失败，返回值：{e.returncode}，错误信息：{e.stderr}")
+    except Exception as e:
+        print(f"执行过程中发生错误：{e}")
+
+def main():
+    # 禁用USB设备
+    control_usb(DEVICE_INSTANCE_ID, "disable")
+    
+    # 等待2分钟（120秒）
+    print("设备已禁用，等待2分钟...")
+    time.sleep(120)
+    
+    # 重新启用USB设备
+    control_usb(DEVICE_INSTANCE_ID, "enable")
+
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+### 使用前务必注意：
+
+1.  **获取正确的设备实例 ID**：
+    *   以**管理员身份**打开命令行（CMD 或 PowerShell）。
+    *   运行以下命令查看所有 USB 设备：
+        ```cmd
+        pnputil /enum-devices /class USB
+        ```
+    *   或者在设备管理器中查看设备属性详情中的“设备实例路径”。
+    *   **实例 ID 格式类似**：`USB\VID_1234&PID_5678\5&12345678&0&1`。你需要根据设备制造商和型号来确定正确的 ID。
+
+2.  **管理员权限**：**这个 Python 脚本必须以管理员身份运行**，否则 `pnputil` 命令会失败。你可以通过右键点击 Python 脚本或 IDE，选择“以管理员身份运行”来实现。
+
+3.  **设备重新启用**：有些 USB 设备在禁用后可能需要物理上重新插拔才能在系统中正确识别，但多数情况下软件启用即可。
+
+---
+
+### 补充：获取设备实例 ID 的简单方法
+
+如果你不确定如何获取设备的实例 ID，可以尝试以下 PowerShell 命令来列出所有 USB 设备的实例 ID 和描述：
+
+```powershell
+Get-PnpDevice -Class USB | Where-Object { $_.InstanceId -like "USB*" } | Format-List FriendlyName, InstanceId
+```
+
+或者在 CMD 中（信息可能没有 PowerShell 详细）：
+```cmd
+pnputil /enum-devices /class USB
+```
+
+---
+
+### 提示
+
+-   **谨慎操作**：确保你禁用的是正确的设备，误禁用关键设备（如键盘、鼠标）可能会导致系统操作困难。
+-   **错误处理**：上述代码包含了基本的错误处理，但你可以根据实际需要进一步扩展，例如记录日志、重试机制等。
+-   **pnputil 的可用性**：`pnputil` 是现代 Windows 系统（如 Windows 10 和 Windows 11）自带的工具。对于旧版 Windows（如 Windows 7），其功能可能有限。
+
+希望这个简洁的接口能帮到你。如有其他问题，请随时提出。

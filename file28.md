@@ -308,3 +308,117 @@ if __name__ == "__main__":
 - 设备名称搜索是模糊匹配，不区分大小写
 
 您可以直接调用这些函数来根据名称搜索USB设备并获取详细信息，或者将上述代码导入到您的项目中使用。
+
+
+---
+通过Python（特别是`pywin32`）获取Windows中USB设备的详细信息，并**根据设备名称进行筛选**是可行的。下面是一个简洁的代码示例和说明。
+
+下面的代码演示了如何根据名称（支持模糊匹配）获取USB设备详细信息：
+
+```python
+import win32com.client
+import re
+
+def get_usb_devices_by_name(device_name_pattern):
+    """
+    根据设备名称模式获取USB设备详细信息
+
+    Args:
+        device_name_pattern (str): 要匹配的设备名称模式（不区分大小写，支持部分匹配）
+
+    Returns:
+        list: 包含匹配设备信息的字典列表，每个字典代表一个设备及其属性。
+    """
+    wmi = win32com.client.GetObject("winmgmts:")
+    # 使用 Win32_PnPEntity 获取更友好的设备名称
+    all_devices = wmi.InstancesOf("Win32_PnPEntity") 
+    usb_devices = []
+
+    for device in all_devices:
+        # 检查是否为USB设备
+        if device.PNPDeviceID and 'USB' in device.PNPDeviceID:
+            device_name = device.Name or ''
+            description = device.Description or ''
+
+            # 检查设备名称或描述是否包含目标字符串（不区分大小写）
+            pattern_lower = device_name_pattern.lower()
+            if (pattern_lower in device_name.lower() or 
+                pattern_lower in description.lower()):
+
+                device_info = {
+                    'Name': device_name,
+                    'Description': description,
+                    'DeviceID': device.DeviceID,
+                    'PNPDeviceID': device.PNPDeviceID,
+                    'Status': device.Status,
+                    'Manufacturer': device.Manufacturer,
+                    'Service': device.Service, # 设备使用的驱动服务
+                    'ClassGuid': device.ClassGUID,
+                    # 可以根据需要添加更多属性
+                    # 'HardwareID': device.HardwareID, # 某些情况下可能需要尝试其他属性获取VID/PID
+                }
+                # 尝试从PNPDeviceID或HardwareID中提取VID和PID
+                vid_pid_info = extract_vid_pid(device.PNPDeviceID)
+                device_info.update(vid_pid_info)
+
+                usb_devices.append(device_info)
+
+    return usb_devices
+
+def extract_vid_pid(pnp_device_id):
+    """
+    尝试从PNPDeviceID字符串中提取USB设备的VID和PID。
+
+    Args:
+        pnp_device_id (str): 设备的PNPDeviceID字符串
+
+    Returns:
+        dict: 包含VID和PID的字典（如果找到）
+    """
+    vid, pid = None, None
+    # 常见的格式如 USB\VID_1234&PID_5678\...
+    vid_match = re.search(r'VID_([0-9A-Fa-f]{4})', pnp_device_id)
+    pid_match = re.search(r'PID_([0-9A-Fa-f]{4})', pnp_device_id)
+    if vid_match:
+        vid = vid_match.group(1)
+    if pid_match:
+        pid = pid_match.group(1)
+    return {'VID': vid, 'PID': pid}
+
+# 使用示例
+if __name__ == "__main__":
+    # 搜索名称中包含"HID"的USB设备（例如键盘、鼠标）
+    matching_devices = get_usb_devices_by_name("HID")
+
+    print(f"找到 {len(matching_devices)} 个匹配的设备:")
+    for idx, device in enumerate(matching_devices, 1):
+        print(f"\n设备 {idx}:")
+        for key, value in device.items():
+            print(f"  {key}: {value}")
+```
+
+### 代码说明
+
+1.  **核心函数**：
+    *   `get_usb_devices_by_name(device_name_pattern)`: 该函数查询WMI中的`Win32_PnPEntity`类，获取所有即插即用设备信息，并筛选出`PNPDeviceID`包含"USB"的设备（表明是USB设备）。它还会检查设备名称或描述是否包含用户提供的模式（不区分大小写）。匹配设备的详细信息（如名称、描述、设备ID、状态等）会被收集到一个字典列表中返回。
+
+2.  **VID/PID提取**：
+    *   `extract_vid_pid(pnp_device_id)`: 这是一个辅助函数，尝试使用正则表达式从设备的`PNPDeviceID`中提取供应商ID（VID）和产品ID（PID）。VID和PID是USB设备的重要标识符。
+
+3.  **使用示例**：
+    *   在`if __name__ == "__main__":`块中，代码演示了如何搜索名称中包含"HID"（通常指人体接口设备，如键盘、鼠标）的USB设备，并打印出找到的每个设备的详细信息。
+
+### 注意事项
+
+*   **运行权限**：某些WMI信息可能需要**管理员权限**才能访问。
+*   **设备名称的局限性**：Windows系统提供的设备名称有时可能不够直观（例如，可能显示为“USB输入设备”而不是具体的品牌型号）。`Win32_PnPEntity`提供的名称通常比`Win32_USBHub`更友好一些。
+*   **`pywin32`安装**：确保已通过`pip install pywin32`安装pywin32库。
+*   **模糊匹配**：当前实现是简单的字符串包含匹配（不区分大小写）。你可以根据需要修改匹配逻辑（例如，使用正则表达式进行更复杂的模式匹配）。
+
+### 其他参考方法
+
+除了使用`Win32_PnPEntity`，你也可以尝试查询`Win32_USBControllerDevice`或`Win32_USBHub`，但它们提供的设备名称信息往往更偏向于控制器或集线器本身，而不是连接的外部设备。
+
+如果`pywin32`获取的信息不足以满足需求，特别是无法获取到足够清晰的“友好名称”时，也可以考虑通过**PowerShell命令**（`Get-PnpDevice`）来获取设备列表，该命令获取的`FriendlyName`属性有时可能更直观。
+
+希望这能帮助你有效地找到所需的USB设备信息。

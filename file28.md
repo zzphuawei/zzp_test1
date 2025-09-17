@@ -117,3 +117,194 @@ if __name__ == "__main__":
 - VID和PID通常是十六进制格式，例如Intel设备的VID可能是"8087"
 
 您可以直接调用这些函数来获取USB设备信息，或者将上述代码导入到您的项目中使用。
+
+
+----
+# Windows USB设备信息获取接口 - 按名称查询
+
+下面是一个专门针对Windows系统的Python接口，用于根据设备名称获取USB设备的详细信息：
+
+```python
+import subprocess
+import re
+
+def get_usb_devices_by_name(device_name):
+    """
+    根据设备名称获取USB设备的详细信息
+    
+    参数:
+        device_name (str): 设备名称或名称的一部分（支持模糊匹配）
+    
+    返回:
+        list: 包含匹配设备详细信息的字典列表
+    """
+    try:
+        # 获取所有USB设备信息
+        result = subprocess.check_output(
+            ['wmic', 'path', 'Win32_PnPEntity', 'where', "DeviceID like 'USB%'", 'get', '/format:list'],
+            stderr=subprocess.STDOUT,
+            text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        
+        # 解析WMIC输出
+        devices = []
+        current_device = {}
+        
+        for line in result.splitlines():
+            line = line.strip()
+            if not line:
+                if current_device and _device_matches_name(current_device, device_name):
+                    devices.append(current_device)
+                current_device = {}
+            else:
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    current_device[key] = value
+        
+        # 检查最后一个设备
+        if current_device and _device_matches_name(current_device, device_name):
+            devices.append(current_device)
+            
+        return devices
+        
+    except subprocess.CalledProcessError as e:
+        return [{"Error": f"命令执行失败: {e.output}"}]
+    except Exception as e:
+        return [{"Error": f"获取USB设备信息时出错: {str(e)}"}]
+
+def _device_matches_name(device, name_pattern):
+    """检查设备名称是否匹配模式"""
+    if not name_pattern:
+        return True
+        
+    name = device.get('Name', '')
+    description = device.get('Description', '')
+    
+    # 不区分大小写的匹配
+    pattern = name_pattern.lower()
+    return pattern in name.lower() or pattern in description.lower()
+
+def get_detailed_usb_info(device_id):
+    """
+    根据设备ID获取更详细的USB设备信息
+    
+    参数:
+        device_id (str): 设备ID
+    
+    返回:
+        dict: 包含设备详细信息的字典
+    """
+    try:
+        # 获取设备硬件ID
+        result = subprocess.check_output(
+            ['wmic', 'path', 'Win32_PnPEntity', 'where', f"DeviceID='{device_id}'", 'get', 'HardwareID', '/format:list'],
+            stderr=subprocess.STDOUT,
+            text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        
+        # 解析硬件ID
+        hardware_ids = []
+        for line in result.splitlines():
+            line = line.strip()
+            if line.startswith('HardwareID='):
+                ids = line.split('=', 1)[1].split(';')
+                hardware_ids.extend(ids)
+        
+        # 从硬件ID中提取VID和PID
+        vid, pid = None, None
+        for hw_id in hardware_ids:
+            vid_match = re.search(r'VID_([0-9A-Fa-f]{4})', hw_id)
+            pid_match = re.search(r'PID_([0-9A-Fa-f]{4})', hw_id)
+            
+            if vid_match:
+                vid = vid_match.group(1)
+            if pid_match:
+                pid = pid_match.group(1)
+            
+            if vid and pid:
+                break
+        
+        # 获取设备状态
+        status_result = subprocess.check_output(
+            ['wmic', 'path', 'Win32_PnPEntity', 'where', f"DeviceID='{device_id}'", 'get', 'Status', '/format:list'],
+            stderr=subprocess.STDOUT,
+            text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        
+        status = "Unknown"
+        for line in status_result.splitlines():
+            line = line.strip()
+            if line.startswith('Status='):
+                status = line.split('=', 1)[1]
+                break
+        
+        # 构建详细信息字典
+        detailed_info = {
+            "DeviceID": device_id,
+            "VID": vid,
+            "PID": pid,
+            "Status": status,
+            "HardwareIDs": hardware_ids
+        }
+        
+        return detailed_info
+        
+    except subprocess.CalledProcessError as e:
+        return {"Error": f"命令执行失败: {e.output}"}
+    except Exception as e:
+        return {"Error": f"获取USB设备详细信息时出错: {str(e)}"}
+
+# 使用示例
+if __name__ == "__main__":
+    # 根据名称搜索USB设备
+    device_name = "USB"  # 可以替换为具体的设备名称，如"Arduino"、"Logitech"等
+    devices = get_usb_devices_by_name(device_name)
+    
+    print(f"找到 {len(devices)} 个匹配 '{device_name}' 的USB设备:")
+    print("=" * 80)
+    
+    for i, device in enumerate(devices, 1):
+        print(f"\n设备 {i}:")
+        for key, value in device.items():
+            print(f"  {key}: {value}")
+        
+        # 获取更详细的信息
+        if 'DeviceID' in device:
+            detailed_info = get_detailed_usb_info(device['DeviceID'])
+            print("  详细信息:")
+            for key, value in detailed_info.items():
+                if key == 'HardwareIDs':
+                    print(f"    {key}:")
+                    for hw_id in value:
+                        print(f"      - {hw_id}")
+                else:
+                    print(f"    {key}: {value}")
+```
+
+## 使用说明
+
+1. 调用 `get_usb_devices_by_name(device_name)` 函数根据设备名称搜索USB设备
+   - 支持模糊匹配（不区分大小写）
+   - 返回包含匹配设备信息的字典列表
+
+2. 调用 `get_detailed_usb_info(device_id)` 函数根据设备ID获取更详细的USB设备信息
+   - 包括VID、PID、状态和硬件ID等信息
+
+## 功能特点
+
+- 根据设备名称模糊搜索USB设备
+- 返回结构化的设备信息（字典格式）
+- 提取设备的VID（供应商ID）和PID（产品ID）
+- 获取设备状态信息
+- 列出所有硬件ID
+
+## 注意事项
+
+- 需要Windows系统
+- 在某些情况下可能需要管理员权限才能获取完整的USB设备信息
+- 设备名称搜索是模糊匹配，不区分大小写
+
+您可以直接调用这些函数来根据名称搜索USB设备并获取详细信息，或者将上述代码导入到您的项目中使用。

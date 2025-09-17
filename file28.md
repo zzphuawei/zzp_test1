@@ -422,3 +422,192 @@ if __name__ == "__main__":
 如果`pywin32`获取的信息不足以满足需求，特别是无法获取到足够清晰的“友好名称”时，也可以考虑通过**PowerShell命令**（`Get-PnpDevice`）来获取设备列表，该命令获取的`FriendlyName`属性有时可能更直观。
 
 希望这能帮助你有效地找到所需的USB设备信息。
+
+----
+----
+# 使用 pywin32 获取串口设备信息
+
+如果您想获取串口设备（COM端口）的信息，可以使用类似的方法。以下是专门用于获取串口设备信息的代码：
+
+```python
+import win32com.client
+import re
+
+def get_serial_ports():
+    """
+    获取所有串口设备信息
+    
+    Returns:
+        list: 包含所有串口设备信息的字典列表
+    """
+    wmi = win32com.client.GetObject("winmgmts:")
+    # 获取所有PnP设备
+    all_devices = wmi.InstancesOf("Win32_PnPEntity")
+    serial_ports = []
+    
+    for device in all_devices:
+        device_name = device.Name or ''
+        pnp_device_id = device.PNPDeviceID or ''
+        
+        # 检查是否为串口设备
+        if ('COM' in device_name.upper() or 
+            'SERIAL' in device_name.upper() or
+            re.search(r'COM\d+', device_name) or
+            'UART' in device_name.upper() or
+            (pnp_device_id and ('SERIAL' in pnp_device_id.upper() or 'COM' in pnp_device_id.upper()))):
+            
+            device_info = {
+                'Name': device_name,
+                'Description': device.Description or '',
+                'DeviceID': device.DeviceID or '',
+                'PNPDeviceID': pnp_device_id,
+                'Status': device.Status or '',
+                'Manufacturer': device.Manufacturer or '',
+                'Service': device.Service or '',
+                'ClassGuid': device.ClassGUID or ''
+            }
+            
+            # 尝试从名称中提取COM端口号
+            com_port_match = re.search(r'COM(\d+)', device_name.upper())
+            if com_port_match:
+                device_info['COMPort'] = f"COM{com_port_match.group(1)}"
+            
+            # 尝试提取VID和PID
+            vid_pid_info = extract_vid_pid(pnp_device_id)
+            device_info.update(vid_pid_info)
+            
+            serial_ports.append(device_info)
+    
+    return serial_ports
+
+def get_serial_ports_by_name(device_name_pattern):
+    """
+    根据设备名称模式获取串口设备信息
+    
+    Args:
+        device_name_pattern (str): 要匹配的设备名称模式（不区分大小写，支持部分匹配）
+    
+    Returns:
+        list: 包含匹配设备信息的字典列表
+    """
+    all_serial_ports = get_serial_ports()
+    matching_ports = []
+    
+    pattern_lower = device_name_pattern.lower()
+    
+    for port in all_serial_ports:
+        name = port.get('Name', '').lower()
+        description = port.get('Description', '').lower()
+        
+        if pattern_lower in name or pattern_lower in description:
+            matching_ports.append(port)
+    
+    return matching_ports
+
+def extract_vid_pid(pnp_device_id):
+    """
+    尝试从PNPDeviceID字符串中提取USB设备的VID和PID
+    
+    Args:
+        pnp_device_id (str): 设备的PNPDeviceID字符串
+    
+    Returns:
+        dict: 包含VID和PID的字典（如果找到）
+    """
+    vid, pid = None, None
+    # 常见的格式如 USB\VID_1234&PID_5678\...
+    vid_match = re.search(r'VID_([0-9A-Fa-f]{4})', pnp_device_id or '')
+    pid_match = re.search(r'PID_([0-9A-Fa-f]{4})', pnp_device_id or '')
+    if vid_match:
+        vid = vid_match.group(1)
+    if pid_match:
+        pid = pid_match.group(1)
+    return {'VID': vid, 'PID': pid}
+
+# 使用示例
+if __name__ == "__main__":
+    # 获取所有串口设备
+    all_serial_ports = get_serial_ports()
+    print(f"找到 {len(all_serial_ports)} 个串口设备:")
+    for idx, port in enumerate(all_serial_ports, 1):
+        print(f"\n设备 {idx}:")
+        for key, value in port.items():
+            print(f"  {key}: {value}")
+    
+    print("\n" + "="*50 + "\n")
+    
+    # 搜索特定名称的串口设备
+    search_term = "USB"  # 可以替换为 "FTDI", "Prolific", "Arduino" 等
+    matching_ports = get_serial_ports_by_name(search_term)
+    print(f"找到 {len(matching_ports)} 个名称包含 '{search_term}' 的串口设备:")
+    for idx, port in enumerate(matching_ports, 1):
+        print(f"\n设备 {idx}:")
+        for key, value in port.items():
+            print(f"  {key}: {value}")
+```
+
+## 获取系统COM端口列表的替代方法
+
+除了使用WMI，还可以使用Python的`serial.tools.list_ports`模块来获取COM端口列表：
+
+```python
+import serial.tools.list_ports
+
+def get_com_ports_list():
+    """
+    使用pyserial获取COM端口列表
+    
+    Returns:
+        list: 包含COM端口信息的列表
+    """
+    ports = serial.tools.list_ports.comports()
+    port_list = []
+    
+    for port in ports:
+        port_info = {
+            'Device': port.device,
+            'Name': port.name,
+            'Description': port.description,
+            'HardwareID': port.hwid,
+            'VID': port.vid,
+            'PID': port.pid,
+            'SerialNumber': port.serial_number,
+            'Location': port.location,
+            'Manufacturer': port.manufacturer,
+            'Product': port.product,
+            'Interface': port.interface
+        }
+        port_list.append(port_info)
+    
+    return port_list
+
+# 使用pyserial的示例
+if __name__ == "__main__":
+    com_ports = get_com_ports_list()
+    print("使用pyserial获取的COM端口信息:")
+    for port in com_ports:
+        print(f"\n端口: {port['Device']}")
+        for key, value in port.items():
+            if value:  # 只显示有值的属性
+                print(f"  {key}: {value}")
+```
+
+## 安装依赖
+
+要运行上述代码，您需要安装以下Python库：
+
+```bash
+pip install pywin32 pyserial
+```
+
+## 注意事项
+
+1. **串口设备的识别**：串口设备可能通过多种方式连接到计算机（USB转串口、PCI串口卡、主板内置串口等），它们的标识方式可能不同。
+
+2. **COM端口号**：代码尝试从设备名称中提取COM端口号，但并非所有串口设备都会在名称中明确显示COM端口号。
+
+3. **pyserial的优势**：`pyserial`库专门用于串口通信，它提供的端口信息通常更加准确和完整，特别是对于USB转串口设备。
+
+4. **权限问题**：在某些系统上，可能需要管理员权限才能访问某些串口设备信息。
+
+这些代码应该能够帮助您获取系统中所有串口设备的信息，并根据设备名称进行筛选。

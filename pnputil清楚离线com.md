@@ -351,3 +351,189 @@ pause
 5. 完成后建议重启计算机
 
 这个脚本在Windows 10和Windows 11系统上都应该可以正常工作。如果您在执行过程中遇到任何问题，或者需要清理其他类型的设备，请告诉我，我可以帮您调整脚本。
+
+
+---
+您提出了一个很好的改进建议。我将修改脚本，先扫描并显示所有匹配的设备，然后再让用户确认是否删除。
+
+## 改进后的批处理脚本（先扫描后确认）
+
+```batch
+@echo off
+chcp 65001 >nul
+title 设备清理脚本 - 扫描模式
+
+echo ===============================================
+echo           设备清理脚本（扫描模式）
+echo ===============================================
+echo 此脚本将先扫描以下设备：
+echo   - HDC Device
+echo   - Harmony OS Device  
+echo   - HDC Interface
+echo.
+echo 扫描完成后会显示找到的设备，并询问是否删除
+echo ===============================================
+echo.
+echo 正在扫描设备，请稍候...
+echo.
+
+set "DEVICE_COUNT=0"
+
+:: 扫描设备并计数
+for /f "tokens=*" %%i in ('powershell -Command "Get-PnpDevice | Where-Object {$_.FriendlyName -like '*HDC Device*' -or $_.FriendlyName -like '*Harmony OS Device*' -or $_.FriendlyName -like '*HDC Interface*'} | ForEach-Object { Write-Output ('『' + $_.FriendlyName + '』 - InstanceId: ' + $_.InstanceId) }"') do (
+    echo %%i
+    set /a DEVICE_COUNT+=1
+)
+
+echo.
+echo ===============================================
+echo 扫描完成！共找到 %DEVICE_COUNT% 个匹配的设备
+echo ===============================================
+echo.
+
+if %DEVICE_COUNT% equ 0 (
+    echo 未找到任何匹配的设备，无需清理。
+    pause
+    exit /b 0
+)
+
+:choice
+set /p choice=是否要删除以上所有设备？(Y/N): 
+if /i "%choice%"=="y" goto execute_cleanup
+if /i "%choice%"=="n" goto exit_script
+echo 请输入 Y 或 N
+goto choice
+
+:execute_cleanup
+echo.
+echo 开始删除设备...
+echo.
+
+powershell -Command "& {"
+powershell -Command "    Write-Host '正在删除 HDC Device...' -ForegroundColor Red"
+powershell -Command "    Get-PnpDevice | Where-Object {$_.FriendlyName -like '*HDC Device*'} | ForEach-Object {"
+powershell -Command "        Write-Host ('正在删除: ' + $_.FriendlyName) -ForegroundColor Yellow"
+powershell -Command "        try {"
+powershell -Command "            pnputil.exe /remove-device $_.InstanceId"
+powershell -Command "            Write-Host '   删除成功' -ForegroundColor Green"
+powershell -Command "        } catch {"
+powershell -Command "            Write-Host '   删除失败' -ForegroundColor Red"
+powershell -Command "        }"
+powershell -Command "    }"
+powershell -Command "    "
+powershell -Command "    Write-Host '正在删除 Harmony OS Device...' -ForegroundColor Red"
+powershell -Command "    Get-PnpDevice | Where-Object {$_.FriendlyName -like '*Harmony OS Device*'} | ForEach-Object {"
+powershell -Command "        Write-Host ('正在删除: ' + $_.FriendlyName) -ForegroundColor Yellow"
+powershell -Command "        try {"
+powershell -Command "            pnputil.exe /remove-device $_.InstanceId"
+powershell -Command "            Write-Host '   删除成功' -ForegroundColor Green"
+powershell -Command "        } catch {"
+powershell -Command "            Write-Host '   删除失败' -ForegroundColor Red"
+powershell -Command "        }"
+powershell -Command "    }"
+powershell -Command "    "
+powershell -Command "    Write-Host '正在删除 HDC Interface...' -ForegroundColor Red"
+powershell -Command "    Get-PnpDevice | Where-Object {$_.FriendlyName -like '*HDC Interface*'} | ForEach-Object {"
+powershell -Command "        Write-Host ('正在删除: ' + $_.FriendlyName) -ForegroundColor Yellow"
+powershell -Command "        try {"
+powershell -Command "            pnputil.exe /remove-device $_.InstanceId"
+powershell -Command "            Write-Host '   删除成功' -ForegroundColor Green"
+powershell -Command "        } catch {"
+powershell -Command "            Write-Host '   删除失败' -ForegroundColor Red"
+powershell -Command "        }"
+powershell -Command "    }"
+powershell -Command "}"
+
+echo.
+echo 设备删除操作完成！
+echo 建议重新启动计算机以使更改生效。
+pause
+goto :eof
+
+:exit_script
+echo 操作已取消。
+pause
+```
+
+## 可选版本：更详细的设备信息显示
+
+如果您希望看到更详细的设备信息，这里还有一个增强版本：
+
+```batch
+@echo off
+chcp 65001 >nul
+title 设备清理脚本 - 详细扫描模式
+
+echo ===============================================
+echo           设备清理脚本（详细扫描模式）
+echo ===============================================
+echo.
+echo 正在扫描设备，请稍候...
+echo.
+
+:: 使用PowerShell获取更详细的设备信息
+powershell -Command "& {
+    Write-Host '扫描结果：' -ForegroundColor Cyan
+    Write-Host '==========' -ForegroundColor Cyan
+    
+    $devices = Get-PnpDevice | Where-Object {
+        $_.FriendlyName -like '*HDC Device*' -or 
+        $_.FriendlyName -like '*Harmony OS Device*' -or 
+        $_.FriendlyName -like '*HDC Interface*'
+    }
+    
+    if ($devices.Count -eq 0) {
+        Write-Host '未找到任何匹配的设备。' -ForegroundColor Yellow
+        exit
+    }
+    
+    $counter = 1
+    foreach ($device in $devices) {
+        Write-Host ('设备 ' + $counter + ':') -ForegroundColor White
+        Write-Host ('  名称: ' + $device.FriendlyName) -ForegroundColor Gray
+        Write-Host ('  实例ID: ' + $device.InstanceId) -ForegroundColor Gray
+        Write-Host ('  状态: ' + $device.Status) -ForegroundColor Gray
+        Write-Host ('  类: ' + $device.Class) -ForegroundColor Gray
+        Write-Host ''
+        $counter++
+    }
+    
+    Write-Host ('总计找到 ' + $devices.Count + ' 个设备') -ForegroundColor Cyan
+}"
+
+echo.
+set /p choice=是否要删除以上所有设备？(Y/N): 
+if /i "%choice%"=="y" (
+    echo 开始删除设备...
+    powershell -Command "Get-PnpDevice | Where-Object {$_.FriendlyName -like '*HDC Device*' -or $_.FriendlyName -like '*Harmony OS Device*' -or $_.FriendlyName -like '*HDC Interface*'} | ForEach-Object { pnputil.exe /remove-device $_.InstanceId }"
+    echo 删除操作完成！
+) else (
+    echo 操作已取消。
+)
+
+pause
+```
+
+## 🆕 脚本改进特点
+
+### 🔍 **扫描阶段**
+- **显示设备详情**：在删除前显示所有匹配设备的详细信息
+- **设备计数**：明确告知用户找到的设备数量
+- **实例ID显示**：显示每个设备的唯一标识符
+
+### ✅ **确认机制**
+- **二次确认**：用户在看到具体设备列表后再决定是否删除
+- **清晰提示**：显示"共找到 X 个设备"的明确信息
+
+### 🛡️ **安全增强**
+- **零设备处理**：如果没有找到设备，直接退出而不询问
+- **操作反馈**：显示每个设备的删除状态（成功/失败）
+
+## 使用流程
+
+1. **以管理员身份运行**脚本
+2. **查看扫描结果** - 脚本会列出所有匹配的设备
+3. **做出决定** - 基于显示的设备列表选择 Y/N
+4. **执行操作** - 只有确认后才执行删除
+
+这样的设计让您能够清楚地知道将要删除哪些设备，避免误操作，更加安全可靠。

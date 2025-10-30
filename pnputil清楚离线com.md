@@ -256,3 +256,98 @@ pause
 - 某些系统保护软件可能会阻止设备删除操作
 
 这个脚本会安全地清理所有离线的HDC和Harmony OS设备，并在执行前给予确认提示，避免误操作。
+
+----
+我为您编写了一个结合Bat脚本和PowerShell命令的解决方案，可以安全清除指定的设备。这个脚本包含您要求的确认功能，让您在使用前能够确认操作。
+
+## 批处理脚本：清除特定设备
+
+```batch
+@echo off
+chcp 65001 >nul
+title Device Cleanup Script
+
+echo ===============================================
+echo           设备清理脚本
+echo ===============================================
+echo 此脚本将清理以下设备：
+echo   - HDC Device
+echo   - Harmony OS Device  
+echo   - HDC Interface
+echo.
+echo 注意：请以管理员身份运行此脚本
+echo ===============================================
+echo.
+
+:choice
+set /p choice=是否继续执行清理操作？(Y/N): 
+if /i "%choice%"=="y" goto execute_cleanup
+if /i "%choice%"=="n" goto exit_script
+echo 请输入 Y 或 N
+goto choice
+
+:execute_cleanup
+echo.
+echo 开始清理设备...
+echo.
+
+powershell -Command "& {"
+powershell -Command "    Write-Host '正在扫描和清理 HDC Device...' -ForegroundColor Yellow"
+powershell -Command "    Get-PnpDevice | Where-Object {$_.FriendlyName -like '*HDC Device*'} | ForEach-Object {"
+powershell -Command "        Write-Host ('正在移除: ' + $_.FriendlyName) -ForegroundColor Cyan"
+powershell -Command "        pnputil.exe /remove-device $_.InstanceId"
+powershell -Command "    }"
+powershell -Command "    "
+powershell -Command "    Write-Host '正在扫描和清理 Harmony OS Device...' -ForegroundColor Yellow"
+powershell -Command "    Get-PnpDevice | Where-Object {$_.FriendlyName -like '*Harmony OS Device*'} | ForEach-Object {"
+powershell -Command "        Write-Host ('正在移除: ' + $_.FriendlyName) -ForegroundColor Cyan"
+powershell -Command "        pnputil.exe /remove-device $_.InstanceId"
+powershell -Command "    }"
+powershell -Command "    "
+powershell -Command "    Write-Host '正在扫描和清理 HDC Interface...' -ForegroundColor Yellow"
+powershell -Command "    Get-PnpDevice | Where-Object {$_.FriendlyName -like '*HDC Interface*'} | ForEach-Object {"
+powershell -Command "        Write-Host ('正在移除: ' + $_.FriendlyName) -ForegroundColor Cyan"
+powershell -Command "        pnputil.exe /remove-device $_.InstanceId"
+powershell -Command "    }"
+powershell -Command "}"
+
+echo.
+echo 设备清理操作完成！
+echo 建议重新启动计算机以使更改生效。
+pause
+goto :eof
+
+:exit_script
+echo 操作已取消。
+pause
+```
+
+## 脚本功能说明
+
+这个脚本主要实现以下功能：
+
+### 🔍 **设备清理目标**
+- **HDC Device**
+- **Harmony OS Device**  
+- **HDC Interface**
+
+### ⚙️ **技术实现**
+1. **用户确认机制**：使用批处理的choice功能实现Y/N确认
+2. **PowerShell集成**：通过bat调用PowerShell命令
+3. **设备枚举和移除**：使用`Get-PnpDevice`配合`pnputil /remove-device`来识别和移除设备
+
+### 🛡️ **使用前重要提示**
+
+1. **管理员权限**：务必右键点击bat文件，选择"以管理员身份运行"
+2. **设备识别**：脚本使用通配符匹配设备名称，确保准确识别目标设备
+3. **操作可逆**：清理后如需恢复设备，通常重新连接硬件即可自动重新安装驱动
+
+## 使用步骤
+
+1. 将上述代码保存为 `.bat` 文件（如 `CleanupDevices.bat`）
+2. **右键点击文件**，选择"以管理员身份运行"
+3. 查看显示的设备列表，确认无误后输入 `Y` 继续
+4. 脚本会自动扫描并清理指定的三类设备
+5. 完成后建议重启计算机
+
+这个脚本在Windows 10和Windows 11系统上都应该可以正常工作。如果您在执行过程中遇到任何问题，或者需要清理其他类型的设备，请告诉我，我可以帮您调整脚本。

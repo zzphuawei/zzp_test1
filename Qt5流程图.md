@@ -217,3 +217,281 @@ pip install PyQt5
 - 两种流程图并排显示，便于比较
 
 您可以根据需要修改流程图的步骤内容、布局样式或添加更多交互功能。
+
+----
+您遇到了程序闪退的问题，这通常是由于Qt应用程序初始化或绘图过程中的错误导致的。让我提供一个修复后的版本，并添加一些错误处理：
+
+```python
+import sys
+import traceback
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+                             QHBoxLayout, QLabel, QPushButton, QFrame, QMessageBox)
+from PyQt5.QtCore import Qt, QRectF
+from PyQt5.QtGui import QPainter, QPen, QBrush, QFont, QColor
+
+class FlowChartWidget(QWidget):
+    def __init__(self, chart_type="sync"):
+        super().__init__()
+        self.chart_type = chart_type
+        self.setMinimumSize(600, 400)
+        
+    def paintEvent(self, event):
+        try:
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.Antialiasing)
+            
+            if self.chart_type == "sync":
+                self.draw_sync_flowchart(painter)
+            else:
+                self.draw_sequential_flowchart(painter)
+        except Exception as e:
+            print(f"绘图错误: {e}")
+            traceback.print_exc()
+    
+    def draw_sync_flowchart(self, painter):
+        # 设置画笔和字体
+        pen = QPen(Qt.black, 2)
+        painter.setPen(pen)
+        painter.setFont(QFont("Arial", 10))
+        
+        width = self.width()
+        height = self.height()
+        
+        # 开始节点
+        start_rect = QRectF(width/2 - 50, 50, 100, 40)
+        painter.drawRect(start_rect)
+        painter.drawText(start_rect, Qt.AlignCenter, "开始")
+        
+        # 分支线
+        painter.drawLine(width/2, 90, width/2, 130)
+        painter.drawLine(width/2, 130, width/4, 130)
+        painter.drawLine(width/2, 130, 3*width/4, 130)
+        
+        # X轴步骤1
+        x1_rect = QRectF(width/4 - 50, 130, 100, 40)
+        painter.drawRect(x1_rect)
+        painter.drawText(x1_rect, Qt.AlignCenter, "X轴步骤1")
+        
+        # X轴步骤2
+        x2_rect = QRectF(width/4 - 50, 180, 100, 40)
+        painter.drawRect(x2_rect)
+        painter.drawText(x2_rect, Qt.AlignCenter, "X轴步骤2")
+        
+        # Y轴步骤1
+        y1_rect = QRectF(3*width/4 - 50, 130, 100, 40)
+        painter.drawRect(y1_rect)
+        painter.drawText(y1_rect, Qt.AlignCenter, "Y轴步骤1")
+        
+        # Y轴步骤2
+        y2_rect = QRectF(3*width/4 - 50, 180, 100, 40)
+        painter.drawRect(y2_rect)
+        painter.drawText(y2_rect, Qt.AlignCenter, "Y轴步骤2")
+        
+        # 合并线
+        painter.drawLine(width/4, 220, width/4, 260)
+        painter.drawLine(3*width/4, 220, 3*width/4, 260)
+        painter.drawLine(width/4, 260, width/2, 260)
+        painter.drawLine(3*width/4, 260, width/2, 260)
+        
+        # 结束节点
+        end_rect = QRectF(width/2 - 50, 260, 100, 40)
+        painter.drawRect(end_rect)
+        painter.drawText(end_rect, Qt.AlignCenter, "结束")
+    
+    def draw_sequential_flowchart(self, painter):
+        # 设置画笔和字体
+        pen = QPen(Qt.black, 2)
+        painter.setPen(pen)
+        painter.setFont(QFont("Arial", 10))
+        
+        width = self.width()
+        height = self.height()
+        
+        # 计算步骤间距
+        step_width = (width - 100) / 6  # 6个步骤（开始+4个步骤+结束）
+        
+        # 开始节点
+        start_rect = QRectF(50, height/2 - 20, 80, 40)
+        painter.drawRect(start_rect)
+        painter.drawText(start_rect, Qt.AlignCenter, "开始")
+        
+        # X轴步骤1
+        x1_rect = QRectF(50 + step_width, height/2 - 20, 80, 40)
+        painter.drawRect(x1_rect)
+        painter.drawText(x1_rect, Qt.AlignCenter, "X轴步骤1")
+        
+        # X轴步骤2
+        x2_rect = QRectF(50 + 2*step_width, height/2 - 20, 80, 40)
+        painter.drawRect(x2_rect)
+        painter.drawText(x2_rect, Qt.AlignCenter, "X轴步骤2")
+        
+        # Y轴步骤1
+        y1_rect = QRectF(50 + 3*step_width, height/2 - 20, 80, 40)
+        painter.drawRect(y1_rect)
+        painter.drawText(y1_rect, Qt.AlignCenter, "Y轴步骤1")
+        
+        # Y轴步骤2
+        y2_rect = QRectF(50 + 4*step_width, height/2 - 20, 80, 40)
+        painter.drawRect(y2_rect)
+        painter.drawText(y2_rect, Qt.AlignCenter, "Y轴步骤2")
+        
+        # 结束节点
+        end_rect = QRectF(50 + 5*step_width, height/2 - 20, 80, 40)
+        painter.drawRect(end_rect)
+        painter.drawText(end_rect, Qt.AlignCenter, "结束")
+        
+        # 连接线
+        for i in range(6):
+            x_start = 50 + i*step_width + 80
+            x_end = 50 + (i+1)*step_width
+            if i < 5:  # 只有5条连接线
+                painter.drawLine(x_start, height/2, x_end, height/2)
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Qt5 流程图示例")
+        self.setGeometry(100, 100, 1200, 600)
+        
+        # 创建中央窗口部件
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        
+        # 创建主布局
+        main_layout = QVBoxLayout(central_widget)
+        
+        # 添加标题
+        title_label = QLabel("两种流程图示例")
+        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold; margin: 10px;")
+        main_layout.addWidget(title_label)
+        
+        # 创建两个流程图的水平布局
+        charts_layout = QHBoxLayout()
+        main_layout.addLayout(charts_layout)
+        
+        # 创建同步流程图
+        sync_frame = QFrame()
+        sync_frame.setFrameStyle(QFrame.Box)
+        sync_layout = QVBoxLayout(sync_frame)
+        
+        sync_label = QLabel("同步流程图")
+        sync_label.setAlignment(Qt.AlignCenter)
+        sync_label.setStyleSheet("font-weight: bold; margin: 5px;")
+        sync_layout.addWidget(sync_label)
+        
+        self.sync_chart = FlowChartWidget("sync")
+        sync_layout.addWidget(self.sync_chart)
+        
+        # 创建顺序流程图
+        seq_frame = QFrame()
+        seq_frame.setFrameStyle(QFrame.Box)
+        seq_layout = QVBoxLayout(seq_frame)
+        
+        seq_label = QLabel("顺序流程图")
+        seq_label.setAlignment(Qt.AlignCenter)
+        seq_label.setStyleSheet("font-weight: bold; margin: 5px;")
+        seq_layout.addWidget(seq_label)
+        
+        self.seq_chart = FlowChartWidget("sequential")
+        seq_layout.addWidget(self.seq_chart)
+        
+        # 将两个流程图添加到水平布局
+        charts_layout.addWidget(sync_frame)
+        charts_layout.addWidget(seq_frame)
+        
+        # 添加说明
+        explanation_label = QLabel(
+            "第一种: 同步流程 - X轴和Y轴的步骤同时执行\n"
+            "第二种: 顺序流程 - 所有步骤按顺序依次执行"
+        )
+        explanation_label.setAlignment(Qt.AlignCenter)
+        explanation_label.setStyleSheet("margin: 10px;")
+        main_layout.addWidget(explanation_label)
+
+def excepthook(exc_type, exc_value, exc_tb):
+    """全局异常处理"""
+    tb = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    print("发生异常:")
+    print(tb)
+    QMessageBox.critical(None, "程序异常", f"程序发生异常:\n{str(exc_value)}")
+
+if __name__ == "__main__":
+    # 设置全局异常处理
+    sys.excepthook = excepthook
+    
+    app = QApplication(sys.argv)
+    
+    try:
+        window = MainWindow()
+        window.show()
+        sys.exit(app.exec_())
+    except Exception as e:
+        print(f"程序启动错误: {e}")
+        traceback.print_exc()
+```
+
+## 修复和改进
+
+1. **添加了异常处理**：
+   - 在paintEvent中添加了try-except块
+   - 添加了全局异常处理函数
+   - 在程序启动时添加了异常捕获
+
+2. **改进了顺序流程图的布局**：
+   - 使用动态计算步骤间距，而不是固定坐标
+   - 使流程图能够更好地适应不同窗口大小
+
+3. **添加了错误输出**：
+   - 使用traceback打印详细的错误信息
+   - 在控制台输出错误信息，便于调试
+
+## 可能的原因和解决方案
+
+如果程序仍然闪退，可能是以下原因：
+
+1. **Qt安装问题**：
+   ```
+   pip uninstall PyQt5
+   pip install PyQt5
+   ```
+
+2. **系统兼容性问题**：
+   - 尝试使用PyQt5的替代版本：
+   ```
+   pip install PyQt5==5.15.4
+   ```
+
+3. **缺少依赖**：
+   - 在某些系统上可能需要安装额外的Qt库
+
+4. **GPU/显示驱动问题**：
+   - 尝试添加以下代码禁用硬件加速：
+   ```python
+   QApplication.setAttribute(Qt.AA_UseSoftwareOpenGL)
+   ```
+
+如果问题仍然存在，请尝试运行以下简化版本，看看是否能正常工作：
+
+```python
+import sys
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel
+from PyQt5.QtCore import Qt
+
+class SimpleWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("简单测试")
+        layout = QVBoxLayout()
+        label = QLabel("如果能看到这个窗口，说明Qt基本功能正常")
+        layout.addWidget(label)
+        self.setLayout(layout)
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = SimpleWindow()
+    window.show()
+    sys.exit(app.exec_())
+```
+
+请尝试运行这些代码，并告诉我具体遇到了什么问题，这样我可以提供更精确的解决方案。
